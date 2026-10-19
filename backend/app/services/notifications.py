@@ -8,8 +8,9 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models import Challenge, Habit, HabitLog, TaskItem, TaskNotificationPrefs, TaskPushSubscription
+from app.models import Challenge, Habit, HabitLog, SubjectSession, TaskItem, TaskNotificationPrefs, TaskPushSubscription
 from app.services import habits as hs
+from app.services import schedules as sched
 
 logger = logging.getLogger("fydry_task_push")
 
@@ -68,7 +69,7 @@ def _at(day, hhmm: str, tz: ZoneInfo) -> datetime:
 def run_due(db: Session, sender: Sender, now_utc: Optional[datetime] = None) -> Dict[str, int]:
     """Envía los avisos vencidos. Idempotente: cada aviso se marca al enviarse."""
     now_utc = now_utc or datetime.now(ZoneInfo("UTC"))
-    sent = {"reminders": 0, "habit_reminders": 0, "challenge_reminders": 0, "habit_results": 0, "day_close": 0, "weekly_plan": 0, "weekly_summary": 0}
+    sent = {"reminders": 0, "habit_reminders": 0, "challenge_reminders": 0, "habit_results": 0, "class_reminders": 0, "deadlines": 0, "day_close": 0, "weekly_plan": 0, "weekly_summary": 0}
     user_ids = {u for (u,) in db.query(TaskPushSubscription.user_id).distinct().all()}
 
     for uid in user_ids:
@@ -113,6 +114,33 @@ def run_due(db: Session, sender: Sender, now_utc: Optional[datetime] = None) -> 
                     send_to_user(db, uid, {"title": f"🏁 {c.time} · Reto: {c.title}", "body": "¡A por tu reto de hoy!", "url": "/dashboard?tab=today", "tag": f"challenge-{c.id}"}, sender)
                     sent["challenge_reminders"] += 1
 
+        # 1d. Clases: aviso antes de empezar
+        today_classes = sched.occurrences(db, uid, today, today)
+        if prefs.class_reminders:
+            for o in today_classes:
+                sess = db.get(SubjectSession, o["session_id"])
+                if sess.last_reminder_on != today and due(o["start_time"]):
+                    sess.last_reminder_on = today
+                    where = o["location"] or ("Virtual" if o["modality"] == "virtual" else "")
+                    send_to_user(db, uid, {"title": f"🎓 {o['start_time']} · {o['subject']}", "body": f"Tu clase empieza pronto{f' · {where}' if where else ''}.", "url": "/dashboard?tab=schedule", "tag": f"class-{sess.id}"}, sender)
+                    sent["class_reminders"] += 1
+
+        # 1e. Entregas de mañana (una vez al día, 18:00)
+        if prefs.deadline_reminders and prefs.last_deadline_sent != today and now >= _at(today, "18:00", tz):
+            prefs.last_deadline_sent = today
+            tomorrow = today + timedelta(days=1)
+            due_tasks = (
+                db.query(TaskItem)
+                .filter(TaskItem.user_id == uid, TaskItem.date == tomorrow, TaskItem.status == "pending", TaskItem.is_deleted.is_(False))
+                .filter((TaskItem.subject_id.isnot(None)) | (TaskItem.assignment_type.isnot(None)))
+                .all()
+            )
+            if due_tasks:
+                exams = [t for t in due_tasks if t.assignment_type == "examen"]
+                title = f"📝 Mañana tienes examen: {exams[0].title}" if exams else f"📚 Mañana entregas {len(due_tasks)} asignación(es)"
+                send_to_user(db, uid, {"title": title, "body": ", ".join(t.title for t in due_tasks[:3]), "url": "/dashboard?tab=schedule", "tag": "deadlines"}, sender)
+                sent["deadlines"] += 1
+
         # 1c. Resultado de la evaluación de hábitos en construcción
         hs.evaluate(db, uid, today)
         for h in db.query(Habit).filter(Habit.user_id == uid, Habit.evaluated_on.isnot(None), Habit.result_notified.is_(False)).all():
@@ -129,6 +157,7 @@ def run_due(db: Session, sender: Sender, now_utc: Optional[datetime] = None) -> 
             has_tasks = (
                 db.query(TaskItem.id).filter(TaskItem.user_id == uid, TaskItem.date == today, TaskItem.is_deleted.is_(False)).first()
                 or today_habits
+                or today_classes
                 or db.query(Challenge.id).filter(Challenge.user_id == uid, Challenge.date == today).first()
             )
             prefs.last_day_close_sent = today
@@ -157,7 +186,7 @@ def _apply_defaults(p: TaskNotificationPrefs) -> None:
     defaults = {
         "timezone": "America/Santo_Domingo", "task_reminders": True, "reminder_minutes": 10,
         "day_close": True, "day_close_time": "21:00", "weekly_plan": True,
-        "weekly_plan_time": "18:00", "weekly_summary": True,
+        "weekly_plan_time": "18:00", "weekly_summary": True, "class_reminders": True, "deadline_reminders": True,
     }
     for k, v in defaults.items():
         if getattr(p, k) is None:

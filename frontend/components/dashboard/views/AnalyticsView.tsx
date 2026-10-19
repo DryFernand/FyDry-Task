@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { BarChart3, Flame, Lightbulb, ListChecks, Loader2, Repeat, Repeat2, Target, Trophy } from "lucide-react";
+import { BarChart3, Flame, GraduationCap, Lightbulb, ListChecks, Loader2, Repeat, Repeat2, Target, Trophy } from "lucide-react";
 import { KindIcon } from "../ItemRows";
 import { useLoad } from "../useLoad";
-import { addDays, Analytics, api, CHALLENGE_META, ChallengeAnalytics, formatDay, HabitAnalytics, STATUS_META, todayISO, weekStart } from "@/lib/tasks";
+import { addDays, Analytics, api, CHALLENGE_META, ChallengeAnalytics, ClassAnalytics, formatDay, HabitAnalytics, STATUS_META, todayISO, weekStart } from "@/lib/tasks";
 
 const BRAND = "#6e2234";
 const SLOT_LABEL = { manana: "Mañana (antes de 12)", tarde: "Tarde (12–18)", noche: "Noche (desde 18)", sin_hora: "Sin hora" } as const;
@@ -67,7 +67,8 @@ export default function AnalyticsView({ refreshKey, onError }: { refreshKey: num
   const [range, setRange] = useState<RangeKey>("4_weeks");
   const [start, end] = rangeOf(range);
   const { data: all, loading } = useLoad<Analytics>(() => api.analytics(start, end), [start, end], refreshKey, onError);
-  const [tab, setTab] = useState<"tasks" | "habits" | "challenges">("tasks");
+  const [tab, setTab] = useState<"tasks" | "habits" | "challenges" | "classes">("tasks");
+  const hasClasses = !!all && (all.classes.classes > 0 || all.classes.by_subject.length > 0);
   const m = all?.tasks;
 
   return (
@@ -96,10 +97,11 @@ export default function AnalyticsView({ refreshKey, onError }: { refreshKey: num
       ) : (
         <>
           {/* Resumen general de las 3 secciones */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className={`grid grid-cols-1 sm:grid-cols-3 ${hasClasses ? "lg:grid-cols-4" : ""} gap-3`}>
             <Stat label="Tareas" value={pct(all.overview.tasks_rate)} sub={`${m.evaluated} marcadas · Hecho 100%, A medias 50%`} />
             <Stat label="Hábitos" value={pct(all.overview.habits_rate)} sub={`${all.habits.done} de ${all.habits.expected} veces`} />
             <Stat label="Retos" value={pct(all.overview.challenges_rate)} sub={`${all.challenges.counts.achieved} logrados de ${all.challenges.decided}`} />
+            {hasClasses && <Stat label="Asistencia" value={pct(all.overview.attendance_rate)} sub={`${all.classes.attended} de ${all.classes.attended + all.classes.absent} clases`} />}
           </div>
           <Card title="Resumen general" icon={Lightbulb}>
             <ul className="space-y-2">
@@ -113,16 +115,17 @@ export default function AnalyticsView({ refreshKey, onError }: { refreshKey: num
           </Card>
 
           <div className="flex flex-wrap gap-1 p-1 rounded-2xl bg-zinc-100 w-fit" role="tablist" aria-label="Sección">
-            {([["tasks", "Tareas"], ["habits", "Hábitos"], ["challenges", "Retos"]] as const).map(([k, label]) => (
+            {([["tasks", "Tareas"], ["habits", "Hábitos"], ["challenges", "Retos"], ...(hasClasses ? [["classes", "Clases"]] : [])] as [typeof tab, string][]).map(([k, label]) => (
               <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
                 className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold cursor-pointer ${tab === k ? "bg-white shadow-xs text-zinc-950" : "text-zinc-500"}`}>
-                <KindIcon kind={k === "tasks" ? "task" : k === "habits" ? "habit" : "challenge"} /> {label}
+                {k === "classes" ? <GraduationCap className="w-3.5 h-3.5 text-sky-700" /> : <KindIcon kind={k === "tasks" ? "task" : k === "habits" ? "habit" : "challenge"} />} {label}
               </button>
             ))}
           </div>
 
           {tab === "habits" && <HabitsSection h={all.habits} />}
           {tab === "challenges" && <ChallengesSection c={all.challenges} />}
+          {tab === "classes" && <ClassesSection k={all.classes} />}
           {tab === "tasks" && (
           <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -282,6 +285,37 @@ function ChallengesSection({ c }: { c: ChallengeAnalytics }) {
           <Card title="Por categoría" icon={Target}>
             {c.by_category.map((r) => <BarRow key={r.category_id ?? "none"} label={r.name} rate={r.rate} count={r.count} color={r.color} unit="retos" />)}
           </Card>
+        </div>
+      )}
+    </>
+  );
+}
+
+function ClassesSection({ k }: { k: ClassAnalytics }) {
+  return (
+    <>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Stat label="Asistencia" value={pct(k.attendance_rate)} sub={`${k.attended} de ${k.attended + k.absent} clases`} />
+        <Stat label="Sin marcar" value={String(k.unmarked)} sub="clases pasadas" />
+        <Stat label="Entregas atrasadas" value={String(k.assignments_overdue)} sub="sin marcar" />
+        <Stat label="Exámenes por delante" value={String(k.upcoming_exams)} sub="en este periodo" />
+      </div>
+      <Insights items={k.insights} />
+      {k.by_subject.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <Card title="Asistencia por materia" icon={GraduationCap}>
+            {k.by_subject.map((r) => <BarRow key={r.subject_id} label={r.name} rate={r.attendance_rate} count={r.attended + r.absent} color={r.color} unit="clases" />)}
+          </Card>
+          <Card title="Entregas por materia" icon={ListChecks}>
+            {k.by_subject.map((r) => <BarRow key={r.subject_id} label={`${r.name}${r.overdue ? ` · ${r.overdue} atrasada(s)` : ""}`} rate={r.assignment_rate} count={r.assignments} color={r.color} unit="entregas" />)}
+          </Card>
+          {k.heavy_days.days > 0 && k.light_days.days > 0 && (
+            <Card title="Días cargados de clase vs tareas" icon={BarChart3}>
+              <BarRow label="4 h o más de clase" rate={k.heavy_days.task_rate} count={k.heavy_days.days} unit="días" />
+              <BarRow label="Menos de 4 h" rate={k.light_days.task_rate} count={k.light_days.days} unit="días" />
+              <p className="mt-2 text-[11px] text-zinc-400">Cumplimiento de tus tareas según cuántas horas de clase tuviste ese día.</p>
+            </Card>
+          )}
         </div>
       )}
     </>

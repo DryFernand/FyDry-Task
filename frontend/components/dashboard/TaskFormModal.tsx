@@ -3,13 +3,15 @@
 import { useState } from "react";
 import { Loader2, Repeat } from "lucide-react";
 import Modal from "./Modal";
-import { api, Category, Priority, PRIORITY_META, Task, todayISO } from "@/lib/tasks";
+import { api, ASSIGNMENT_META, AssignmentType, Category, Priority, PRIORITY_META, Schedule, Task, todayISO } from "@/lib/tasks";
 
 export type TaskFormTarget = { kind: "new"; date: string | null } | { kind: "edit"; task: Task };
 
 interface Props {
   target: TaskFormTarget | null;
   categories: Category[];
+  /** Para elegir materia en tareas académicas (horarios no archivados). */
+  schedules?: Schedule[];
   onClose: () => void;
   onSaved: () => void;
   /** Lo que se repite va como hábito: abre ese formulario con el día ya elegido. */
@@ -25,7 +27,7 @@ export default function TaskFormModal(props: Props) {
   return <TaskForm {...props} target={props.target} />;
 }
 
-function TaskForm({ target, categories, onClose, onSaved, onSwitchToHabit }: Props & { target: TaskFormTarget }) {
+function TaskForm({ target, categories, schedules = [], onClose, onSaved, onSwitchToHabit }: Props & { target: TaskFormTarget }) {
   const src = target.kind === "edit" ? target.task : null;
   const initialDate = target.kind === "new" ? target.date : target.task.date;
 
@@ -35,14 +37,22 @@ function TaskForm({ target, categories, onClose, onSaved, onSwitchToHabit }: Pro
   const [date, setDate] = useState<string>(initialDate ?? todayISO());
   const [noDate, setNoDate] = useState(initialDate === null);
   const [time, setTime] = useState(src?.time ?? "");
+  const [subjectId, setSubjectId] = useState(src?.subject_id ?? "");
+  const [assignment, setAssignment] = useState<AssignmentType | "">(src?.assignment_type ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const academic = !!categories.find((c) => c.id === categoryId)?.is_academic;
+  const activeSchedules = schedules.filter((s) => !s.is_archived && s.subjects.length);
 
   const save = async () => {
     if (!title.trim()) return setError("Escribe un título.");
     setSaving(true);
     setError("");
-    const data = { title: title.trim(), category_id: categoryId || null, priority, time: time || null, date: noDate ? null : date };
+    const data = {
+      title: title.trim(), category_id: categoryId || null, priority, time: time || null, date: noDate ? null : date,
+      subject_id: academic ? subjectId || null : null,
+      assignment_type: academic ? assignment || null : null,
+    };
     try {
       if (target.kind === "edit") await api.updateTask(target.task.id, data);
       else await api.createTask(data);
@@ -104,9 +114,38 @@ function TaskForm({ target, categories, onClose, onSaved, onSwitchToHabit }: Pro
           </div>
         </div>
 
+        {academic && (
+          <div className="rounded-2xl border border-zinc-200 p-3 space-y-3">
+            <div>
+              <label htmlFor="task-subject" className={fieldLabel}>🎓 Materia</label>
+              <select id="task-subject" value={subjectId} onChange={(e) => setSubjectId(e.target.value)} className={fieldInput}>
+                <option value="">Sin materia</option>
+                {activeSchedules.map((s) => (
+                  <optgroup key={s.id} label={s.name}>
+                    {s.subjects.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                  </optgroup>
+                ))}
+              </select>
+              {activeSchedules.length === 0 && <p className="mt-1 text-[11px] text-zinc-400">Crea tu horario en &quot;Horario&quot; para asociar materias.</p>}
+            </div>
+            <div>
+              <span className={fieldLabel}>Tipo de asignación</span>
+              <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Tipo de asignación">
+                {(Object.keys(ASSIGNMENT_META) as AssignmentType[]).map((k) => (
+                  <button key={k} type="button" role="radio" aria-checked={assignment === k} onClick={() => setAssignment(assignment === k ? "" : k)}
+                    className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-semibold cursor-pointer ${assignment === k ? ASSIGNMENT_META[k].className : "border-zinc-200 text-zinc-500 hover:bg-zinc-50"}`}>
+                    {ASSIGNMENT_META[k].emoji} {ASSIGNMENT_META[k].label}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1.5 text-[11px] text-zinc-400">El día de la tarea es su fecha de entrega.</p>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label htmlFor="task-date" className={fieldLabel}>Día</label>
+            <label htmlFor="task-date" className={fieldLabel}>{academic ? "Entrega" : "Día"}</label>
             <input id="task-date" type="date" value={date} disabled={noDate} onChange={(e) => setDate(e.target.value)} className={`${fieldInput} disabled:opacity-40`} />
             <label className="mt-1.5 flex items-center gap-1.5 text-[11px] text-zinc-500 cursor-pointer">
               <input type="checkbox" checked={noDate} onChange={(e) => setNoDate(e.target.checked)} /> Sin fecha

@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
-import { AlertCircle, BarChart3, BrainCircuit, CalendarDays, CheckCircle2, CheckSquare, Loader2, LogOut, Menu, Plus, Repeat, Settings, Sun, Trophy, X } from "lucide-react";
+import { AlertCircle, BarChart3, BrainCircuit, CalendarDays, CheckCircle2, CheckSquare, GraduationCap, Loader2, LogOut, Menu, Plus, Repeat, Settings, Sun, Trophy, X } from "lucide-react";
 import { apiRequest } from "@/lib/api";
-import { api, Category, Challenge, todayISO } from "@/lib/tasks";
+import { api, Category, Challenge, Schedule, Subject, todayISO } from "@/lib/tasks";
 import { registerServiceWorker } from "@/lib/push";
 import { useLanguage } from "@/context/LanguageContext";
 import BrandMark from "@/components/BrandMark";
@@ -13,6 +13,7 @@ import TaskFormModal, { TaskFormTarget } from "./TaskFormModal";
 import HabitFormModal, { HabitFormTarget } from "./HabitFormModal";
 import { ChallengeFormModal, ChallengeFormTarget, ChallengeResultModal } from "./ChallengeModals";
 import DayCloseModal from "./DayCloseModal";
+import { ScheduleFormModal, ScheduleFormTarget, SubjectDetailModal, SubjectFormModal, SubjectFormTarget } from "./ScheduleModals";
 import SettingsModal from "./SettingsModal";
 import { Dash, DashContext } from "./DashContext";
 import { AddMenu } from "./ItemRows";
@@ -21,11 +22,12 @@ import WeekView from "./views/WeekView";
 import TasksView from "./views/TasksView";
 import HabitsView from "./views/HabitsView";
 import ChallengesView from "./views/ChallengesView";
+import ScheduleView from "./views/ScheduleView";
 import AnalyticsView from "./views/AnalyticsView";
 import ProfileView from "./views/ProfileView";
 
 type User = { id?: string; full_name?: string; email?: string };
-type Tab = "today" | "week" | "tasks" | "habits" | "challenges" | "analytics" | "profile";
+type Tab = "today" | "week" | "tasks" | "habits" | "challenges" | "schedule" | "analytics" | "profile";
 type NavItem = { id: Tab; label: string; icon: typeof Sun };
 
 // Mismo patrón que FyDry: grupos con título en el menú lateral
@@ -45,6 +47,7 @@ const NAV_GROUPS: { id: string; title: string; items: NavItem[] }[] = [
       { id: "tasks", label: "Tareas", icon: CheckSquare },
       { id: "habits", label: "Hábitos", icon: Repeat },
       { id: "challenges", label: "Retos", icon: Trophy },
+      { id: "schedule", label: "Horario", icon: GraduationCap },
     ],
   },
   {
@@ -124,6 +127,10 @@ export default function DashboardLayout() {
   const [habitTarget, setHabitTarget] = useState<HabitFormTarget | null>(null);
   const [challengeTarget, setChallengeTarget] = useState<ChallengeFormTarget | null>(null);
   const [resultTarget, setResultTarget] = useState<Challenge | null>(null);
+  const [schedules, setSchedules] = useState<Schedule[]>([]);
+  const [scheduleTarget, setScheduleTarget] = useState<ScheduleFormTarget | null>(null);
+  const [subjectTarget, setSubjectTarget] = useState<SubjectFormTarget | null>(null);
+  const [subjectDetail, setSubjectDetail] = useState<Subject | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
   const [toast, setToast] = useState<{ kind: "error" | "info"; msg: string } | null>(null);
@@ -139,6 +146,13 @@ export default function DashboardLayout() {
     api.categories().then(setCategories).catch((e) => onError(e.message));
   }, [onError]);
   const closeSettings = useCallback(() => setIsSettingsOpen(false), []);
+  const loadSchedules = useCallback(() => {
+    api.schedules().then(setSchedules).catch((e) => onError(e.message));
+  }, [onError]);
+  const reloadSchedules = useCallback(() => {
+    loadSchedules();
+    setRefreshKey((k) => k + 1);
+  }, [loadSchedules]);
 
   // Como en FyDry: en el teléfono la barra inferior se oculta al bajar y aparece al subir
   useEffect(() => {
@@ -203,6 +217,11 @@ export default function DashboardLayout() {
     registerServiceWorker();
   }, [isLoadingAuth, loadCategories]);
 
+  // Horarios: al entrar y cada vez que cambian datos (asignaciones, asistencia)
+  useEffect(() => {
+    if (!isLoadingAuth) loadSchedules();
+  }, [isLoadingAuth, loadSchedules, refreshKey]);
+
   const goTo = (next: Tab) => {
     setTab(next);
     setIsMobileMenuOpen(false);
@@ -219,6 +238,9 @@ export default function DashboardLayout() {
     () => ({
       categories,
       catOf: (id) => categories.find((c) => c.id === id),
+      schedules,
+      subjectOf: (id) => (id ? schedules.flatMap((s) => s.subjects).find((m) => m.id === id) : undefined),
+      reloadSchedules,
       refreshKey,
       bump,
       onError,
@@ -234,9 +256,15 @@ export default function DashboardLayout() {
         openClose: (date) => setCloseDate(date),
         create: (kind, date) =>
           kind === "task" ? setFormTarget({ kind: "new", date }) : kind === "habit" ? setHabitTarget({ kind: "new", mode: "building", date }) : setChallengeTarget({ kind: "new", date }),
+        newSchedule: () => setScheduleTarget({ kind: "new" }),
+        editSchedule: (schedule) => setScheduleTarget({ kind: "edit", schedule }),
+        duplicateSchedule: (schedule) => setScheduleTarget({ kind: "duplicate", schedule }),
+        newSubject: (scheduleId) => setSubjectTarget({ kind: "new", scheduleId }),
+        editSubject: (subject) => setSubjectTarget({ kind: "edit", subject }),
+        openSubject: (subject) => setSubjectDetail(subject),
       },
     }),
-    [categories, refreshKey, bump, onError, onInfo]
+    [categories, schedules, reloadSchedules, refreshKey, bump, onError, onInfo]
   );
 
   if (isLoadingAuth) {
@@ -354,6 +382,7 @@ export default function DashboardLayout() {
               {tab === "tasks" && <TasksView />}
               {tab === "habits" && <HabitsView />}
               {tab === "challenges" && <ChallengesView />}
+              {tab === "schedule" && <ScheduleView />}
               {tab === "analytics" && <AnalyticsView {...shared} />}
               {tab === "profile" && <ProfileView {...shared} />}
             </motion.div>
@@ -380,12 +409,16 @@ export default function DashboardLayout() {
       <TaskFormModal
         target={formTarget}
         categories={categories}
+        schedules={schedules}
         onClose={() => setFormTarget(null)}
         onSaved={bump}
         onSwitchToHabit={(date) => { setFormTarget(null); setHabitTarget({ kind: "new", mode: "established", date }); }}
       />
       <HabitFormModal target={habitTarget} categories={categories} onClose={() => setHabitTarget(null)} onSaved={bump} />
       <ChallengeFormModal target={challengeTarget} categories={categories} onClose={() => setChallengeTarget(null)} onSaved={bump} />
+      <ScheduleFormModal target={scheduleTarget} onClose={() => setScheduleTarget(null)} onSaved={reloadSchedules} />
+      <SubjectFormModal target={subjectTarget} onClose={() => setSubjectTarget(null)} onSaved={reloadSchedules} />
+      <SubjectDetailModal subject={subjectDetail} onClose={() => setSubjectDetail(null)} />
       <ChallengeResultModal challenge={resultTarget} onClose={() => setResultTarget(null)} onSaved={() => { bump(); onInfo("Resultado guardado."); }} />
       <DayCloseModal date={closeDate} categories={categories} onClose={() => setCloseDate(null)} onSaved={() => { bump(); onInfo("Día cerrado. ¡Buen trabajo!"); }} />
       <SettingsModal

@@ -7,8 +7,8 @@ import httpx
 from app.core.config import settings
 
 SYSTEM_PROMPT = """Eres un analista de hábitos de productividad de la app FyDry Task.
-Recibes métricas agregadas de 3 áreas de una persona: TAREAS (pendientes agendados), HÁBITOS (rutinas en días fijos;
-algunos en construcción con un periodo de adaptación) y RETOS (metas de un día con resultado logrado/parcial/no logrado).
+Recibes métricas agregadas de varias áreas de una persona: TAREAS (pendientes agendados), HÁBITOS (rutinas en días fijos;
+algunos en construcción con un periodo de adaptación) y RETOS (metas de un día con resultado logrado/parcial/no logrado) y CLASES (asistencia y entregas por materia, si estudia).
 Considera las 3 áreas y cómo se relacionan (p. ej. cumple tareas pero no sostiene hábitos, o se pone retos muy altos).
 Asígnale UN tipo de perfil y explícalo con sus datos. Responde en español, cálido y directo, sin juzgar.
 No es un diagnóstico psicológico: habla de hábitos, no de personalidad clínica.
@@ -22,6 +22,7 @@ Ejemplos de tipos (puedes crear otro si encaja mejor):
 - "Postergador estratégico": mueve muchas tareas a otro día.
 - "Constructor de hábitos": sostiene sus rutinas y consolida hábitos nuevos.
 - "Retador ambicioso": se pone retos altos y muchos quedan en parcial.
+- "Estudiante comprometido": asiste a clases y cumple sus entregas a tiempo.
 
 Devuelve SOLO un JSON con esta forma:
 {"type": "nombre corto del tipo",
@@ -41,6 +42,7 @@ class AiUnavailable(Exception):
 def _compact(all_m: Dict) -> Dict:
     """Quita lo que no aporta al modelo (ids, colores) para un prompt más corto. Nunca envía notas de retos."""
     m, h, c = all_m["tasks"], all_m["habits"], all_m["challenges"]
+    k = all_m.get("classes") or {"attendance_rate": None, "by_subject": [], "heavy_days": {}, "light_days": {}}
     return {
         "periodo": {"inicio": all_m["start"], "fin": all_m["end"], "dias_activos": all_m["overview"]["active_days"]},
         "tareas": {
@@ -76,6 +78,16 @@ def _compact(all_m: Dict) -> Dict:
             "conteos": {"logrados": c["counts"]["achieved"], "parciales": c["counts"]["partial"], "no_logrados": c["counts"]["failed"]},
             "por_categoria": [{"categoria": r["name"], "retos": r["count"], "cumplimiento": r["rate"]} for r in c["by_category"]],
             "recientes": [{"reto": r["title"], "resultado": r["status"]} for r in c["recent"]],
+        },
+        "clases": {
+            "asistencia_total": k["attendance_rate"],
+            "por_materia": [
+                {"materia": r["name"], "asistencia": r["attendance_rate"], "entregas": r["assignments"],
+                 "cumplimiento_entregas": r["assignment_rate"], "vencidas": r["overdue"], "examenes": r["exams"]}
+                for r in k["by_subject"]
+            ],
+            "cumplimiento_tareas_dias_cargados": k["heavy_days"].get("task_rate"),
+            "cumplimiento_tareas_dias_ligeros": k["light_days"].get("task_rate"),
         },
     }
 

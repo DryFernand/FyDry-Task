@@ -166,11 +166,20 @@ export default function SettingsModal({
                 </div>
 
       {tab === "categories" && (
-      <Section hint="Organiza tus tareas por área. Las de base también se pueden renombrar o borrar.">
+      <Section hint="Organiza tus tareas por área. 🎓 marca las académicas: sus tareas pueden tener materia y tipo de asignación.">
         <ul className="space-y-2">
           {categories.map((c) => (
             <li key={c.id} className="flex items-center gap-2">
               <input type="color" value={c.color} aria-label={`Color de ${c.name}`} onChange={(e) => guard(async () => { await api.updateCategory(c.id, { color: e.target.value }); reloadCategories(); })} className="w-8 h-8 rounded-lg border border-zinc-200 cursor-pointer bg-white p-0.5" />
+              <button
+                type="button"
+                aria-pressed={c.is_academic}
+                title={c.is_academic ? "Académica: sus tareas pueden tener materia" : "Marcar como académica"}
+                onClick={() => guard(async () => { await api.updateCategory(c.id, { is_academic: !c.is_academic }); reloadCategories(); })}
+                className={`px-2 py-2 rounded-xl border text-sm cursor-pointer ${c.is_academic ? "border-sky-300 bg-sky-50" : "border-zinc-200 grayscale opacity-40 hover:opacity-80"}`}
+              >
+                🎓
+              </button>
               <input
                 defaultValue={c.name}
                 maxLength={60}
@@ -271,6 +280,20 @@ export default function SettingsModal({
                 <div className="text-zinc-500 mt-1">lunes a las 8:00</div>
               </div>
               <Toggle checked={shownPrefs.weekly_summary} onChange={(v) => savePref({ weekly_summary: v })} label="Resumen semanal" />
+            </li>
+            <li className="flex items-center justify-between gap-3 py-3">
+              <div className="text-xs">
+                <div className="font-semibold text-zinc-900">Recordatorio de clases</div>
+                <div className="text-zinc-500 mt-1">los mismos minutos antes que las tareas</div>
+              </div>
+              <Toggle checked={shownPrefs.class_reminders} onChange={(v) => savePref({ class_reminders: v })} label="Recordatorio de clases" />
+            </li>
+            <li className="flex items-center justify-between gap-3 py-3">
+              <div className="text-xs">
+                <div className="font-semibold text-zinc-900">Entregas y exámenes de mañana</div>
+                <div className="text-zinc-500 mt-1">todos los días a las 18:00</div>
+              </div>
+              <Toggle checked={shownPrefs.deadline_reminders} onChange={(v) => savePref({ deadline_reminders: v })} label="Entregas de mañana" />
             </li>
             <li className="pt-3 text-[11px] text-zinc-400">Zona horaria: {shownPrefs.timezone}</li>
           </ul>

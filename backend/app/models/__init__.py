@@ -11,6 +11,10 @@ from app.models.tasks import (
     Habit,
     HabitLog,
     Challenge,
+    Schedule,
+    Subject,
+    SubjectSession,
+    ClassAttendance,
 )
 
 __all__ = [
@@ -26,4 +30,8 @@ __all__ = [
     "Habit",
     "HabitLog",
     "Challenge",
+    "Schedule",
+    "Subject",
+    "SubjectSession",
+    "ClassAttendance",
 ]

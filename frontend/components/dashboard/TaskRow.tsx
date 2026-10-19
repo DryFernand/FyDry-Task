@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { Check, CircleDashed, X, ArrowRight, MoreHorizontal, Pencil, Trash2, Repeat, Clock, Flag } from "lucide-react";
-import { api, addDays, Category, formatDay, PRIORITY_META, STATUS_META, Task, TaskStatus } from "@/lib/tasks";
+import { api, addDays, ASSIGNMENT_META, Category, formatDay, PRIORITY_META, STATUS_META, Task, TaskStatus } from "@/lib/tasks";
+import { useDash } from "./DashContext";
 
 const STATUS_ICONS = { done: Check, partial: CircleDashed, not_done: X, postponed: ArrowRight } as const;
 type Marked = Exclude<TaskStatus, "pending">;
@@ -35,6 +36,9 @@ export default function TaskRow({
   compact?: boolean;
   draggable?: boolean;
 }) {
+  const { subjectOf } = useDash();
+  const subject = subjectOf(task.subject_id);
+  const assignment = task.assignment_type ? ASSIGNMENT_META[task.assignment_type] : null;
   const [busy, setBusy] = useState(false);
   const [menu, setMenu] = useState<"none" | "postpone" | "more">("none");
   const [customDate, setCustomDate] = useState("");
@@ -86,7 +90,14 @@ export default function TaskRow({
                 <Clock className="w-3 h-3" aria-hidden="true" /> {task.time}
               </span>
             )}
-            {category && <span>{category.name}</span>}
+            {assignment && (
+              <span className={`inline-flex items-center gap-0.5 px-1.5 py-px rounded-md border text-[10px] font-semibold ${assignment.className}`}>{assignment.emoji} {assignment.label}</span>
+            )}
+            {subject ? (
+              <span className="inline-flex items-center gap-1 font-medium text-zinc-600"><span className="w-1.5 h-1.5 rounded-full" style={{ background: subject.color }} aria-hidden="true" />{subject.name}</span>
+            ) : (
+              category && <span>{category.name}</span>
+            )}
             {task.priority === "high" && (
               <span className={`inline-flex items-center gap-0.5 ${PRIORITY_META.high.className}`}>
                 <Flag className="w-3 h-3" aria-hidden="true" /> Alta

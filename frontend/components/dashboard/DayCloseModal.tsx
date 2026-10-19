@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, CircleDashed, X, ArrowRight, Loader2, Moon } from "lucide-react";
+import { Check, CircleDashed, X, ArrowRight, GraduationCap, Loader2, Moon } from "lucide-react";
 import Modal from "./Modal";
 import { KindIcon } from "./ItemRows";
 import { ResultChoices } from "./ChallengeModals";
-import { addDays, api, Category, Challenge, ChallengeStatus, formatDay, Habit, HabitLogStatus, STATUS_META, Task } from "@/lib/tasks";
+import { addDays, api, AttendanceStatus, Category, Challenge, ChallengeStatus, ClassOccurrence, formatDay, Habit, HabitLogStatus, STATUS_META, Task } from "@/lib/tasks";
 
 type Choice = "done" | "partial" | "not_done" | "postponed";
 const OPTIONS: { value: Choice; icon: typeof Check }[] = [
@@ -47,6 +47,8 @@ function DayClose({ date, categories, onClose, onSaved }: Props & { date: string
   const [tasks, setTasks] = useState<Task[]>([]);
   const [habits, setHabits] = useState<Habit[]>([]);
   const [challenges, setChallenges] = useState<Challenge[]>([]);
+  const [classes, setClasses] = useState<ClassOccurrence[]>([]);
+  const [attChoice, setAttChoice] = useState<Record<string, AttendanceStatus>>({});
   const [total, setTotal] = useState(0);
   const [taskChoice, setTaskChoice] = useState<Record<string, Choice>>({});
   const [habitChoice, setHabitChoice] = useState<Record<string, HabitLogStatus>>({});
@@ -65,7 +67,8 @@ function DayClose({ date, categories, onClose, onSaved }: Props & { date: string
         setTasks(a.tasks.filter((t) => t.status === "pending"));
         setHabits(a.habits.filter((h) => pendingHabitIds.has(h.id)));
         setChallenges(a.challenges.filter((c) => c.status === "pending"));
-        setTotal(a.tasks.length + a.habit_entries.length + a.challenges.length);
+        setClasses((a.classes ?? []).filter((c) => !c.attendance));
+        setTotal(a.tasks.length + a.habit_entries.length + a.challenges.length + (a.classes ?? []).length);
         setEnergy(reviews[0]?.energy ?? null);
         setNote(reviews[0]?.note ?? "");
       })
@@ -75,8 +78,9 @@ function DayClose({ date, categories, onClose, onSaved }: Props & { date: string
 
   const tomorrow = addDays(date, 1);
   const catOf = (id: string | null) => categories.find((c) => c.id === id);
-  const pendingCount = tasks.length + habits.length + challenges.length;
+  const pendingCount = tasks.length + habits.length + challenges.length + classes.length;
   const missing =
+    classes.filter((c) => !attChoice[c.session_id]).length +
     tasks.filter((t) => !taskChoice[t.id]).length +
     habits.filter((h) => !habitChoice[h.id]).length +
     challenges.filter((c) => !chResult[c.id]).length;
@@ -95,6 +99,7 @@ function DayClose({ date, categories, onClose, onSaved }: Props & { date: string
       }
       for (const h of habits) if (habitChoice[h.id]) await api.logHabit(h.id, date, habitChoice[h.id]);
       for (const c of challenges) if (chResult[c.id]) await api.challengeResult(c.id, chResult[c.id], chNote[c.id].trim());
+      for (const o of classes) if (attChoice[o.session_id]) await api.markAttendance(o.session_id, date, attChoice[o.session_id]);
       await api.saveReview(date, energy, note.trim() || null);
       onSaved();
       onClose();
@@ -131,6 +136,23 @@ function DayClose({ date, categories, onClose, onSaved }: Props & { date: string
               {total === 0 ? "No tenías nada este día." : pendingCount === 0 ? `Ya marcaste todo (${total}). 👏` : `Te quedan ${pendingCount} de ${total}. En tareas, "Pospuesta" la pasa a mañana.`}
             </p>
             <div className="mt-3 space-y-2">
+              {classes.map((o) => (
+                <div key={o.session_id} className="p-3 rounded-2xl border border-zinc-200 border-l-4" style={{ borderLeftColor: o.color }}>
+                  <div className="flex items-center gap-2 text-sm font-medium text-zinc-900">
+                    <GraduationCap className="w-3.5 h-3.5 text-sky-700 shrink-0" aria-label="Clase" />
+                    <span className="truncate">{o.subject}</span>
+                    <span className="text-[11px] text-zinc-400">{o.start_time}–{o.end_time}</span>
+                  </div>
+                  <div className="mt-2 grid grid-cols-2 gap-1.5" role="radiogroup" aria-label={`Asistencia a ${o.subject}`}>
+                    {([["attended", "Asistí", Check, "bg-green-50 text-green-700 border-green-200"], ["absent", "No asistí", X, "bg-rose-50 text-rose-700 border-rose-200"]] as const).map(([v, label, Icon, on]) => (
+                      <button key={v} type="button" role="radio" aria-checked={attChoice[o.session_id] === v} onClick={() => setAttChoice((c) => ({ ...c, [o.session_id]: v }))}
+                        className={`flex items-center justify-center gap-1 py-1.5 rounded-xl border text-[11px] font-semibold cursor-pointer ${attChoice[o.session_id] === v ? on : "border-zinc-200 text-zinc-500 hover:bg-zinc-50"}`}>
+                        <Icon className="w-3.5 h-3.5" aria-hidden="true" /> {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
               {tasks.map((t) => (
                 <Item key={t.id} kind="task" title={t.title} time={t.time} color={catOf(t.category_id)?.color}>
                   <div className="grid grid-cols-4 gap-1.5" role="radiogroup" aria-label={`Estado de ${t.title}`}>

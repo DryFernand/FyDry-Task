@@ -36,6 +36,8 @@ class TaskCategory(Base, TimestampMixin):
     color = Column(String(20), nullable=False, default="#6e2234")
     is_default = Column(Boolean, nullable=False, default=False)
     position = Column(Integer, nullable=False, default=0)
+    # Categoría de estudio: sus tareas pueden tener materia y tipo de asignación
+    is_academic = Column(Boolean, nullable=False, default=False)
 
 
 class TaskRecurrence(Base, TimestampMixin):
@@ -75,6 +77,8 @@ class TaskItem(Base, TimestampMixin):
     # Las instancias de una recurrencia se borran de forma lógica para que no se regeneren
     is_deleted = Column(Boolean, nullable=False, default=False)
     reminder_sent_at = Column(DateTime, nullable=True)
+    subject_id = Column(String(36), ForeignKey("subjects.id", ondelete="SET NULL"), nullable=True, index=True)
+    assignment_type = Column(String(12), nullable=True)  # tarea | examen | proyecto | exposicion | lectura
 
 
 HABIT_KINDS = ("building", "established")  # en construcción / hábito que ya tienes
@@ -170,6 +174,9 @@ class TaskNotificationPrefs(Base, TimestampMixin):
     last_day_close_sent = Column(Date, nullable=True)
     last_weekly_plan_sent = Column(Date, nullable=True)
     last_weekly_summary_sent = Column(Date, nullable=True)
+    class_reminders = Column(Boolean, nullable=False, default=True)
+    deadline_reminders = Column(Boolean, nullable=False, default=True)  # entregas de mañana, 18:00
+    last_deadline_sent = Column(Date, nullable=True)
 
 
 class TaskAiProfile(Base, TimestampMixin):
@@ -181,3 +188,63 @@ class TaskAiProfile(Base, TimestampMixin):
     period_end = Column(Date, nullable=False)
     profile = Column(JSON, nullable=False)  # {type, title, summary, reasons[], recommendations[]}
     metrics = Column(JSON, nullable=False)
+
+
+PERIOD_TYPES = ("bimestral", "trimestral", "cuatrimestral", "semestral", "anual", "verano", "personalizado")
+ASSIGNMENT_TYPES = ("tarea", "examen", "proyecto", "exposicion", "lectura")
+
+
+class Schedule(Base, TimestampMixin):
+    """Horario de clases de un periodo académico. Puede haber varios a la vez."""
+    __tablename__ = "schedules"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    user_id = Column(String(36), nullable=False, index=True)
+    name = Column(String(120), nullable=False)
+    institution = Column(String(120), nullable=True)
+    period_type = Column(String(16), nullable=False, default="cuatrimestral")
+    start_date = Column(Date, nullable=False)
+    end_date = Column(Date, nullable=False)
+    is_archived = Column(Boolean, nullable=False, default=False)
+
+
+class Subject(Base, TimestampMixin):
+    __tablename__ = "subjects"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    schedule_id = Column(String(36), ForeignKey("schedules.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(String(36), nullable=False, index=True)
+    name = Column(String(150), nullable=False)
+    code = Column(String(30), nullable=True)
+    teacher = Column(String(120), nullable=True)
+    color = Column(String(20), nullable=False, default="#6e2234")
+    credits = Column(Integer, nullable=True)
+    modality = Column(String(12), nullable=False, default="presencial")  # presencial | virtual | mixta
+    location = Column(String(120), nullable=True)
+    link = Column(String(500), nullable=True)
+    position = Column(Integer, nullable=False, default=0)
+
+
+class SubjectSession(Base, TimestampMixin):
+    """Una clase semanal: día y horas. El aula puede cambiar por sesión (ej. laboratorio)."""
+    __tablename__ = "subject_sessions"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    subject_id = Column(String(36), ForeignKey("subjects.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(String(36), nullable=False, index=True)
+    weekday = Column(SmallInteger, nullable=False)  # 0 = lunes
+    start_time = Column(String(5), nullable=False)
+    end_time = Column(String(5), nullable=False)
+    location = Column(String(120), nullable=True)
+    last_reminder_on = Column(Date, nullable=True)
+
+
+class ClassAttendance(Base, TimestampMixin):
+    __tablename__ = "class_attendance"
+    __table_args__ = (UniqueConstraint("session_id", "date", name="uq_class_attendance_session_date"),)
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    session_id = Column(String(36), ForeignKey("subject_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(String(36), nullable=False, index=True)
+    date = Column(Date, nullable=False)
+    status = Column(String(10), nullable=False)  # attended | absent

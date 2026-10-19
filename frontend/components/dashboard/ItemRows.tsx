@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, CheckSquare, Clock, Flag, Hammer, Plus, Repeat, Trophy, X } from "lucide-react";
-import { api, Category, Challenge, CHALLENGE_META, Habit, HabitEntry, HabitLogStatus, todayISO } from "@/lib/tasks";
+import { Check, CheckSquare, Clock, ExternalLink, Flag, GraduationCap, Hammer, MapPin, Plus, Repeat, Trophy, X } from "lucide-react";
+import { api, AttendanceStatus, Category, Challenge, CHALLENGE_META, ClassOccurrence, Habit, HabitEntry, HabitLogStatus, todayISO } from "@/lib/tasks";
 
 /** Identidad visual de cada tipo (ícono + nombre, nunca solo color). */
 export const KIND_META = {
@@ -156,6 +156,50 @@ export function AddMenu({ onPick, label = "Agregar", className = "", below = fal
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ============ Clase: Asistí / No asistí ============
+export function ClassRow({ occ, compact = false, onChanged, onError }: { occ: ClassOccurrence; compact?: boolean; onChanged: () => void; onError: (m: string) => void }) {
+  const [busy, setBusy] = useState(false);
+  const future = occ.date > todayISO();
+  const set = async (st: AttendanceStatus) => {
+    setBusy(true);
+    try {
+      await api.markAttendance(occ.session_id, occ.date, occ.attendance === st ? null : st);
+      onChanged();
+    } catch (e) {
+      onError(e instanceof Error ? e.message : "No se pudo marcar.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className={`rounded-2xl border border-l-4 bg-white ${compact ? "p-2.5" : "p-3 sm:p-3.5"} border-sky-600/20 ${busy ? "opacity-60 pointer-events-none" : ""}`} style={{ borderLeftColor: occ.color }}>
+      <div className={`flex items-start ${compact ? "gap-1.5" : "gap-2.5"}`}>
+        <GraduationCap className="w-3.5 h-3.5 shrink-0 text-sky-700 mt-0.5" aria-label="Clase" />
+        <div className="min-w-0 flex-1">
+          <div className={`${compact ? "text-[13px]" : "text-sm"} font-medium leading-snug break-words hyphens-auto text-zinc-900`}>{occ.subject}</div>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-zinc-400">
+            <span className="inline-flex items-center gap-0.5 font-medium text-zinc-600"><Clock className="w-3 h-3" aria-hidden="true" /> {occ.start_time}–{occ.end_time}</span>
+            {occ.location && <span className="inline-flex items-center gap-0.5"><MapPin className="w-3 h-3" aria-hidden="true" />{occ.location}</span>}
+            {!compact && occ.link && <a href={occ.link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 text-emerald-700 font-semibold"><ExternalLink className="w-3 h-3" /> Entrar</a>}
+          </div>
+        </div>
+      </div>
+      <div className={`mt-2.5 grid grid-cols-2 ${compact ? "gap-1" : "gap-1.5 text-[11px]"}`} role="group" aria-label={`Asistencia a ${occ.subject}`}>
+        {([
+          { st: "attended" as const, icon: Check, label: "Asistí", on: "bg-green-50 text-green-700 border-green-200" },
+          { st: "absent" as const, icon: X, label: "No asistí", on: "bg-rose-50 text-rose-700 border-rose-200" },
+        ]).map(({ st, icon: Icon, label, on }) => (
+          <button key={st} type="button" disabled={future} aria-pressed={occ.attendance === st} aria-label={label} title={future ? "Aún no llega el día" : label} onClick={() => set(st)}
+            className={`flex items-center justify-center gap-1 ${compact ? "py-1 rounded-lg" : "py-1.5 rounded-xl"} border font-semibold transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 ${occ.attendance === st ? on : "border-zinc-200 text-zinc-500 hover:bg-zinc-50"}`}>
+            <Icon className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+            {!compact && <span>{label}</span>}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

@@ -25,11 +25,14 @@ Frontend Task ──login/registro/OTP/OAuth──► API FyDry ──► BD FyD
 | **Mi día** | Checklist de hoy con 4 estados: ✅ Hecho · 🟡 A medias · ❌ No hecho · ➡️ Pospuesta (mañana, en una semana, otro día o sin fecha). Captura rápida, progreso del día, aviso de días anteriores sin marcar y bandeja "Sin fecha". |
 | **Cierre del día** | Repaso de lo pendiente (nada se mueve solo), energía 1–5 y nota. |
 | **Semana** | 7 columnas, arrastrar tareas entre días o a "Sin fecha", copiar la semana anterior, % por día. |
-| **Recurrentes** | "Gimnasio L/M/V 07:00": se generan solas al ver la semana; editar la regla cambia solo las próximas pendientes. |
+| **Hábitos** | "Construir uno nuevo" con periodo de adaptación y meta (80% editable): al terminar pasa a hábito o pide reajuste (extender / reiniciar). "Ya lo tengo" como recordatorio. Se marcan Hecho / No hecho. |
+| **Retos** | Metas de un día con resultado Logrado / Parcial / No logrado y nota obligatoria. |
 | **Análisis** | Cumplimiento (Hecho 1, A medias 0.5, No hecho/Pospuesta 0), planificado vs hecho, racha (meta 70%), por día, categoría, semana, franja horaria y energía; lo más pospuesto; resumen en texto. |
 | **Perfil IA** | Tipo de planificador, por qué (con tus números), fortalezas y recomendaciones. Requiere 2 semanas de datos. La IA recibe solo métricas agregadas. |
-| **Configuración** | Categorías (5 base + propias con color), recurrentes y notificaciones. |
-| **Push** | Recordatorio de tareas con hora, cierre del día, planificar la semana (domingo) y resumen listo (lunes 8:00). En iPhone requiere "Agregar a inicio". |
+| **Horario** | Varios horarios por periodo (bimestral, trimestral, cuatrimestral, semestral, anual, verano, personalizado) con fin calculado; materias con profesor, aula/enlace, créditos y clases semanales; grilla semanal con choques; duplicar para el siguiente periodo. Asistencia (Asistí / No asistí) en Mi día, Semana y el cierre del día. |
+| **Asignaciones** | En categorías 🎓 académicas ("Estudio" por defecto) la tarea tiene Materia y Tipo (Tarea, Examen, Proyecto, Exposición, Lectura); su día es la fecha de entrega. |
+| **Configuración** | Categorías (5 base + propias con color, marca 🎓 académica) y notificaciones. |
+| **Push** | Recordatorio de tareas, hábitos, retos y clases con hora, entregas y exámenes de mañana (18:00), resultado de los hábitos en construcción, cierre del día, planificar la semana (domingo) y resumen listo (lunes 8:00). En iPhone requiere "Agregar a inicio". |
 
 Hora de las tareas: opcional. Fechas siempre en la hora local del usuario.
 
@@ -62,7 +65,7 @@ uvicorn app.main:app --reload --port 8001
 ```
 Migraciones (PostgreSQL): `alembic upgrade head`. En local con SQLite las tablas se crean solas.
 
-Self-checks: `python tests/check_fydry_auth.py` y `python tests/check_tasks.py`
+Self-checks: `python tests/check_fydry_auth.py`, `check_tasks.py`, `check_classes.py` y `check_migration.py`. Siempre usan SQLite local: un `DATABASE_URL` de SQLite gana sobre el `DATABASE_POOLER_URL` del `.env`.
 
 ### Frontend Task (http://localhost:3001)
 ```bash

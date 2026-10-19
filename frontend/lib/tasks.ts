@@ -10,6 +10,7 @@ export interface Category {
   color: string;
   is_default: boolean;
   position: number;
+  is_academic: boolean;
 }
 
 export interface Task {
@@ -25,6 +26,8 @@ export interface Task {
   postponed_from_id: string | null;
   postpone_count: number;
   position: number;
+  subject_id: string | null;
+  assignment_type: AssignmentType | null;
 }
 
 export interface TaskInput {
@@ -33,6 +36,8 @@ export interface TaskInput {
   priority?: Priority;
   date?: string | null;
   time?: string | null;
+  subject_id?: string | null;
+  assignment_type?: AssignmentType | null;
 }
 
 export type HabitKind = "building" | "established";
@@ -115,7 +120,133 @@ export interface Agenda {
   habits: Habit[];
   habit_entries: HabitEntry[];
   challenges: Challenge[];
+  classes: ClassOccurrence[];
 }
+
+// ============ Horario de clases ============
+export type PeriodType = "bimestral" | "trimestral" | "cuatrimestral" | "semestral" | "anual" | "verano" | "personalizado";
+export type AssignmentType = "tarea" | "examen" | "proyecto" | "exposicion" | "lectura";
+export type Modality = "presencial" | "virtual" | "mixta";
+
+export const PERIOD_META: Record<PeriodType, { label: string; months: number | null }> = {
+  bimestral: { label: "Bimestral", months: 2 },
+  trimestral: { label: "Trimestral", months: 3 },
+  cuatrimestral: { label: "Cuatrimestral", months: 4 },
+  semestral: { label: "Semestral", months: 6 },
+  anual: { label: "Anual", months: 12 },
+  verano: { label: "Verano / intensivo", months: 2 },
+  personalizado: { label: "Personalizado", months: null },
+};
+
+export const ASSIGNMENT_META: Record<AssignmentType, { label: string; emoji: string; className: string }> = {
+  tarea: { label: "Tarea", emoji: "📝", className: "bg-zinc-50 text-zinc-700 border-zinc-200" },
+  examen: { label: "Examen", emoji: "🧪", className: "bg-rose-50 text-rose-700 border-rose-200" },
+  proyecto: { label: "Proyecto", emoji: "🧩", className: "bg-violet-50 text-violet-700 border-violet-200" },
+  exposicion: { label: "Exposición", emoji: "🎤", className: "bg-sky-50 text-sky-700 border-sky-200" },
+  lectura: { label: "Lectura", emoji: "📖", className: "bg-amber-50 text-amber-700 border-amber-200" },
+};
+
+/** Fin sugerido: mismo día N meses después, menos un día (igual que el backend). */
+export function suggestedEnd(start: string, type: PeriodType): string | null {
+  const months = PERIOD_META[type].months;
+  if (!months) return null;
+  const d = fromISO(start);
+  const target = new Date(d.getFullYear(), d.getMonth() + months, 1);
+  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+  target.setDate(Math.min(d.getDate(), lastDay));
+  target.setDate(target.getDate() - 1);
+  return toISO(target);
+}
+
+export interface ClassSession {
+  id: string;
+  weekday: number;
+  start_time: string;
+  end_time: string;
+  location: string | null;
+  conflicts: string[];
+}
+
+export interface SessionInput {
+  id?: string;
+  weekday: number;
+  start_time: string;
+  end_time: string;
+  location?: string | null;
+}
+
+export interface Subject {
+  id: string;
+  schedule_id: string;
+  name: string;
+  code: string | null;
+  teacher: string | null;
+  color: string;
+  credits: number | null;
+  modality: Modality;
+  location: string | null;
+  link: string | null;
+  sessions: ClassSession[];
+  weekly_minutes: number;
+  assignments: { total: number; done: number; pending: number; overdue: number; next_date: string | null; next_exam: string | null };
+}
+
+export interface SubjectInput {
+  name: string;
+  code?: string | null;
+  teacher?: string | null;
+  color: string;
+  credits?: number | null;
+  modality: Modality;
+  location?: string | null;
+  link?: string | null;
+  sessions: SessionInput[];
+}
+
+export interface Schedule {
+  id: string;
+  name: string;
+  institution: string | null;
+  period_type: PeriodType;
+  start_date: string;
+  end_date: string;
+  is_archived: boolean;
+  subjects: Subject[];
+  weekly_minutes: number;
+  credits: number;
+}
+
+export interface ScheduleInput {
+  name: string;
+  institution?: string | null;
+  period_type: PeriodType;
+  start_date: string;
+  end_date?: string | null;
+}
+
+export type AttendanceStatus = "attended" | "absent";
+
+export interface ClassOccurrence {
+  session_id: string;
+  subject_id: string;
+  schedule_id: string;
+  date: string;
+  start_time: string;
+  end_time: string;
+  subject: string;
+  color: string;
+  location: string | null;
+  modality: Modality;
+  link: string | null;
+  teacher: string | null;
+  attendance: AttendanceStatus | null;
+}
+
+export const hoursLabel = (minutes: number) => {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m ? `${h} h ${m} min` : `${h} h`;
+};
 
 export interface Review {
   date: string;
@@ -180,14 +311,29 @@ export interface ChallengeAnalytics {
   insights: string[];
 }
 
+export interface ClassAnalytics {
+  classes: number;
+  attended: number;
+  absent: number;
+  unmarked: number;
+  attendance_rate: number | null;
+  by_subject: { subject_id: string; name: string; color: string; classes: number; attended: number; absent: number; attendance_rate: number | null; assignments: number; assignment_rate: number | null; overdue: number; exams: number; upcoming_exams: number }[];
+  assignments_overdue: number;
+  upcoming_exams: number;
+  heavy_days: { days: number; task_rate: number | null };
+  light_days: { days: number; task_rate: number | null };
+  insights: string[];
+}
+
 export interface Analytics {
   start: string;
   end: string;
-  overview: { tasks_rate: number | null; habits_rate: number | null; challenges_rate: number | null; active_days: number; first_day: string | null };
+  overview: { tasks_rate: number | null; habits_rate: number | null; challenges_rate: number | null; attendance_rate: number | null; active_days: number; first_day: string | null };
   insights: string[];
   tasks: TaskAnalytics;
   habits: HabitAnalytics;
   challenges: ChallengeAnalytics;
+  classes: ClassAnalytics;
 }
 
 export interface AiProfile {
@@ -215,6 +361,8 @@ export interface NotificationPrefs {
   weekly_plan: boolean;
   weekly_plan_time: string;
   weekly_summary: boolean;
+  class_reminders: boolean;
+  deadline_reminders: boolean;
 }
 
 // ============ Estados (siempre con ícono + texto, nunca solo color) ============
@@ -306,8 +454,8 @@ const qs = (p: Record<string, string>) => `?${new URLSearchParams(p).toString()}
 
 export const api = {
   categories: () => send<Category[]>("/categories"),
-  createCategory: (name: string, color: string) => send<Category>("/categories", "POST", { name, color }),
-  updateCategory: (id: string, data: Partial<Pick<Category, "name" | "color">>) => send<Category>(`/categories/${id}`, "PATCH", data),
+  createCategory: (name: string, color: string, is_academic = false) => send<Category>("/categories", "POST", { name, color, is_academic }),
+  updateCategory: (id: string, data: Partial<Pick<Category, "name" | "color" | "is_academic">>) => send<Category>(`/categories/${id}`, "PATCH", data),
   deleteCategory: (id: string) => send<null>(`/categories/${id}`, "DELETE"),
 
   tasks: (start: string, end: string) => send<Task[]>(`/tasks${qs({ start, end })}`),
@@ -327,6 +475,17 @@ export const api = {
   logHabit: (id: string, date: string, status: HabitLogStatus | null) => send<HabitEntry>(`/habits/${id}/log`, "PUT", { date, status }),
   extendHabit: (id: string, days: number) => send<Habit>(`/habits/${id}/extend`, "POST", { days }),
   restartHabit: (id: string, start_date: string, period_days: number) => send<Habit>(`/habits/${id}/restart`, "POST", { start_date, period_days }),
+
+  schedules: () => send<Schedule[]>(`/schedules${qs({ today: todayISO() })}`),
+  createSchedule: (data: ScheduleInput) => send<Schedule>(`/schedules${qs({ today: todayISO() })}`, "POST", data),
+  updateSchedule: (id: string, data: Partial<ScheduleInput> & { is_archived?: boolean }) => send<Schedule>(`/schedules/${id}${qs({ today: todayISO() })}`, "PATCH", data),
+  deleteSchedule: (id: string) => send<null>(`/schedules/${id}`, "DELETE"),
+  duplicateSchedule: (id: string, data: ScheduleInput) => send<Schedule>(`/schedules/${id}/duplicate${qs({ today: todayISO() })}`, "POST", data),
+  createSubject: (scheduleId: string, data: SubjectInput) => send<Schedule>(`/schedules/${scheduleId}/subjects${qs({ today: todayISO() })}`, "POST", data),
+  updateSubject: (id: string, data: SubjectInput) => send<Schedule>(`/subjects/${id}${qs({ today: todayISO() })}`, "PUT", data),
+  deleteSubject: (id: string) => send<null>(`/subjects/${id}`, "DELETE"),
+  subjectAssignments: (id: string) => send<Task[]>(`/subjects/${id}/assignments`),
+  markAttendance: (sessionId: string, date: string, status: AttendanceStatus | null) => send<unknown>(`/sessions/${sessionId}/attendance`, "PUT", { date, status }),
 
   challenges: (start: string, end: string) => send<Challenge[]>(`/challenges${qs({ start, end })}`),
   createChallenge: (data: ChallengeInput) => send<Challenge>("/challenges", "POST", data),

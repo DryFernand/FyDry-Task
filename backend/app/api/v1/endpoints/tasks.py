@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, get_current_user
 from app.core.database import get_db
-from app.models import Challenge, Habit, TaskCategory, TaskDayReview, TaskItem
+from app.models import Challenge, Habit, Subject, TaskCategory, TaskDayReview, TaskItem
 from app.schemas.tasks import (
     CategoryIn,
     CategoryOut,
@@ -44,6 +44,19 @@ def _check_category(db: Session, category_id: Optional[str], user_id: str) -> No
         _owned(db, TaskCategory, category_id, user_id)
 
 
+def _academic(db: Session, user_id: str, category_id: Optional[str], data: dict) -> None:
+    """Materia y tipo de asignación solo existen en tareas de una categoría académica."""
+    cat = db.query(TaskCategory).filter(TaskCategory.id == category_id, TaskCategory.user_id == user_id).first() if category_id else None
+    if not (cat and cat.is_academic):
+        if "subject_id" in data:
+            data["subject_id"] = None
+        if "assignment_type" in data:
+            data["assignment_type"] = None
+        return
+    if data.get("subject_id"):
+        _owned(db, Subject, data["subject_id"], user_id)
+
+
 def _check_range(start: date, end: date) -> None:
     if end < start:
         raise HTTPException(status_code=422, detail="La fecha final debe ser posterior a la inicial.")
@@ -57,7 +70,7 @@ def list_categories(user: CurrentUser = Depends(get_current_user), db: Session =
     q = db.query(TaskCategory).filter(TaskCategory.user_id == user.id)
     if not q.first():
         for i, (name, color) in enumerate(DEFAULT_CATEGORIES):
-            db.add(TaskCategory(user_id=user.id, name=name, color=color, is_default=True, position=i))
+            db.add(TaskCategory(user_id=user.id, name=name, color=color, is_default=True, position=i, is_academic=(name == "Estudio")))
         db.commit()
     return q.order_by(TaskCategory.position, TaskCategory.created_at).all()
 
@@ -65,7 +78,7 @@ def list_categories(user: CurrentUser = Depends(get_current_user), db: Session =
 @router.post("/categories", response_model=CategoryOut, status_code=201)
 def create_category(payload: CategoryIn, user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
     count = db.query(TaskCategory).filter(TaskCategory.user_id == user.id).count()
-    cat = TaskCategory(user_id=user.id, name=payload.name.strip(), color=payload.color, position=count)
+    cat = TaskCategory(user_id=user.id, name=payload.name.strip(), color=payload.color, position=count, is_academic=payload.is_academic)
     db.add(cat)
     db.commit()
     db.refresh(cat)
@@ -126,7 +139,9 @@ def list_inbox(user: CurrentUser = Depends(get_current_user), db: Session = Depe
 @router.post("/tasks", response_model=TaskOut, status_code=201)
 def create_task(payload: TaskIn, user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
     _check_category(db, payload.category_id, user.id)
-    item = TaskItem(user_id=user.id, **payload.model_dump())
+    data = payload.model_dump()
+    _academic(db, user.id, payload.category_id, data)
+    item = TaskItem(user_id=user.id, **data)
     item.title = item.title.strip()
     db.add(item)
     db.commit()
@@ -142,6 +157,10 @@ def update_task(task_id: str, payload: TaskUpdate, user: CurrentUser = Depends(g
         raise HTTPException(status_code=409, detail="Esta tarea ya fue pospuesta; edita la copia en su nuevo día.")
     if "category_id" in data:
         _check_category(db, data["category_id"], user.id)
+    if {"category_id", "subject_id", "assignment_type"} & set(data):
+        data.setdefault("subject_id", item.subject_id)
+        data.setdefault("assignment_type", item.assignment_type)
+        _academic(db, user.id, data.get("category_id", item.category_id), data)
     for k, v in data.items():
         if k == "title" and v is not None:
             v = v.strip()
@@ -169,6 +188,7 @@ def postpone_task(task_id: str, payload: PostponeIn, user: CurrentUser = Depends
     copy = TaskItem(
         user_id=user.id, title=item.title, category_id=item.category_id, priority=item.priority,
         date=payload.date, time=item.time, postponed_from_id=item.id,
+        subject_id=item.subject_id, assignment_type=item.assignment_type,
         postpone_count=item.postpone_count + 1,
     )
     db.add(copy)
@@ -201,7 +221,8 @@ def copy_week(payload: CopyWeekIn, user: CurrentUser = Depends(get_current_user)
     created = []
     for s in source:
         c = TaskItem(user_id=user.id, title=s.title, category_id=s.category_id, priority=s.priority,
-                     date=s.date + offset, time=s.time, position=s.position)
+                     date=s.date + offset, time=s.time, position=s.position,
+                     subject_id=s.subject_id, assignment_type=s.assignment_type)
         db.add(c)
         created.append(c)
     db.commit()

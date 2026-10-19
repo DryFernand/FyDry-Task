@@ -7,6 +7,7 @@ from app.schemas import CoreSchema
 
 Priority = Literal["high", "medium", "low"]
 Status = Literal["pending", "done", "partial", "not_done"]  # "postponed" solo vía /postpone
+AssignmentType = Literal["tarea", "examen", "proyecto", "exposicion", "lectura"]
 TIME_PATTERN = r"^([01]\d|2[0-3]):[0-5]\d$"
 COLOR_PATTERN = r"^#[0-9a-fA-F]{6}$"
 
@@ -15,11 +16,13 @@ COLOR_PATTERN = r"^#[0-9a-fA-F]{6}$"
 class CategoryIn(BaseModel):
     name: str = Field(min_length=1, max_length=60)
     color: str = Field(default="#6e2234", pattern=COLOR_PATTERN)
+    is_academic: bool = False
 
 
 class CategoryUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=60)
     color: Optional[str] = Field(default=None, pattern=COLOR_PATTERN)
+    is_academic: Optional[bool] = None
 
 
 class CategoryOut(CoreSchema):
@@ -28,6 +31,7 @@ class CategoryOut(CoreSchema):
     color: str
     is_default: bool
     position: int
+    is_academic: bool
 
 
 # ---------- Tareas ----------
@@ -37,6 +41,8 @@ class TaskIn(BaseModel):
     priority: Priority = "medium"
     date: Optional[dt.date] = None
     time: Optional[str] = Field(default=None, pattern=TIME_PATTERN)
+    subject_id: Optional[str] = None
+    assignment_type: Optional[AssignmentType] = None
 
 
 class TaskUpdate(BaseModel):
@@ -45,6 +51,8 @@ class TaskUpdate(BaseModel):
     priority: Optional[Priority] = None
     date: Optional[dt.date] = None
     time: Optional[str] = Field(default=None, pattern=TIME_PATTERN)
+    subject_id: Optional[str] = None
+    assignment_type: Optional[AssignmentType] = None
     status: Optional[Status] = None
 
 
@@ -70,6 +78,8 @@ class TaskOut(CoreSchema):
     postponed_from_id: Optional[str]
     postpone_count: int
     position: int
+    subject_id: Optional[str] = None
+    assignment_type: Optional[str] = None
 
 
 # ---------- Hábitos ----------
@@ -228,6 +238,8 @@ class NotificationPrefsIn(BaseModel):
     weekly_plan: Optional[bool] = None
     weekly_plan_time: Optional[str] = Field(default=None, pattern=TIME_PATTERN)
     weekly_summary: Optional[bool] = None
+    class_reminders: Optional[bool] = None
+    deadline_reminders: Optional[bool] = None
 
 
 class NotificationPrefsOut(CoreSchema):
@@ -239,6 +251,8 @@ class NotificationPrefsOut(CoreSchema):
     weekly_plan: bool
     weekly_plan_time: str
     weekly_summary: bool
+    class_reminders: bool
+    deadline_reminders: bool
 
 
 # ---------- Perfil IA ----------
@@ -249,3 +263,105 @@ class ProfileOut(CoreSchema):
     profile: dict
     metrics: dict
     created_at: dt.datetime
+
+
+# ---------- Horario de clases ----------
+PeriodType = Literal["bimestral", "trimestral", "cuatrimestral", "semestral", "anual", "verano", "personalizado"]
+
+
+class ScheduleIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    institution: Optional[str] = Field(default=None, max_length=120)
+    period_type: PeriodType = "cuatrimestral"
+    start_date: dt.date
+    end_date: Optional[dt.date] = None  # None = se calcula según el tipo
+
+    @model_validator(mode="after")
+    def check_dates(self):
+        if self.end_date is None and self.period_type == "personalizado":
+            raise ValueError("Un periodo personalizado necesita fecha de fin.")
+        if self.end_date and self.end_date < self.start_date:
+            raise ValueError("La fecha de fin debe ser posterior al inicio.")
+        return self
+
+
+class ScheduleUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    institution: Optional[str] = Field(default=None, max_length=120)
+    period_type: Optional[PeriodType] = None
+    start_date: Optional[dt.date] = None
+    end_date: Optional[dt.date] = None
+    is_archived: Optional[bool] = None
+
+
+class ScheduleDuplicateIn(ScheduleIn):
+    pass
+
+
+class SessionIn(BaseModel):
+    id: Optional[str] = None  # con id = se actualiza (conserva su asistencia)
+    weekday: int = Field(ge=0, le=6)
+    start_time: str = Field(pattern=TIME_PATTERN)
+    end_time: str = Field(pattern=TIME_PATTERN)
+    location: Optional[str] = Field(default=None, max_length=120)
+
+    @model_validator(mode="after")
+    def check_times(self):
+        if self.end_time <= self.start_time:
+            raise ValueError("La clase debe terminar después de empezar.")
+        return self
+
+
+class SubjectIn(BaseModel):
+    name: str = Field(min_length=1, max_length=150)
+    code: Optional[str] = Field(default=None, max_length=30)
+    teacher: Optional[str] = Field(default=None, max_length=120)
+    color: str = Field(default="#6e2234", pattern=COLOR_PATTERN)
+    credits: Optional[int] = Field(default=None, ge=0, le=60)
+    modality: Literal["presencial", "virtual", "mixta"] = "presencial"
+    location: Optional[str] = Field(default=None, max_length=120)
+    link: Optional[str] = Field(default=None, max_length=500)
+    sessions: List[SessionIn] = Field(default_factory=list, max_length=21)
+
+
+class SessionOut(CoreSchema):
+    id: str
+    weekday: int
+    start_time: str
+    end_time: str
+    location: Optional[str]
+    conflicts: List[str] = []
+
+
+class SubjectOut(CoreSchema):
+    id: str
+    schedule_id: str
+    name: str
+    code: Optional[str]
+    teacher: Optional[str]
+    color: str
+    credits: Optional[int]
+    modality: str
+    location: Optional[str]
+    link: Optional[str]
+    sessions: List[SessionOut] = []
+    weekly_minutes: int = 0
+    assignments: dict = {}
+
+
+class ScheduleOut(CoreSchema):
+    id: str
+    name: str
+    institution: Optional[str]
+    period_type: str
+    start_date: dt.date
+    end_date: dt.date
+    is_archived: bool
+    subjects: List[SubjectOut] = []
+    weekly_minutes: int = 0
+    credits: int = 0
+
+
+class AttendanceIn(BaseModel):
+    date: dt.date
+    status: Optional[Literal["attended", "absent"]] = None  # None = desmarcar

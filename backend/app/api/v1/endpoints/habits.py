@@ -22,6 +22,7 @@ from app.schemas.tasks import (
     TaskOut,
 )
 from app.services import habits as hs
+from app.services import schedules as sched
 
 router = APIRouter()
 
@@ -40,7 +41,7 @@ def _with_stats(db: Session, habits: List[Habit], today: date) -> List[HabitOut]
 
 
 # ============ Agenda (Mi día y Semana) ============
-@router.get("/agenda", summary="Tareas, hábitos y retos de un rango de días")
+@router.get("/agenda", summary="Tareas, hábitos, retos y clases de un rango de días")
 def agenda(
     start: date = Query(...),
     end: date = Query(...),
@@ -75,6 +76,7 @@ def agenda(
         "habits": _with_stats(db, used, today),
         "habit_entries": entries,
         "challenges": [ChallengeOut.model_validate(c) for c in challenges],
+        "classes": sched.occurrences(db, user.id, start, end),
     }
 
 

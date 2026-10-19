@@ -1,20 +1,21 @@
 "use client";
 
 import { useState } from "react";
-import { CalendarDays, ChevronLeft, ChevronRight, Copy, Inbox, Loader2, Plus } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, Copy, GraduationCap, Inbox, Loader2, Plus } from "lucide-react";
 import TaskRow from "../TaskRow";
-import { AddMenu, ChallengeRow, HabitRow, ItemKind, KIND_META, KindIcon } from "../ItemRows";
+import { AddMenu, ChallengeRow, ClassRow, HabitRow, ItemKind, KIND_META, KindIcon } from "../ItemRows";
 import { useDash } from "../DashContext";
 import { useLoad } from "../useLoad";
 import { byTime } from "./TodayView";
 import { addDays, api, dayScore, formatDay, todayISO, WEEKDAY_SHORT, weekStart } from "@/lib/tasks";
 
-type Filter = "all" | ItemKind;
+type Filter = "all" | ItemKind | "class";
 const FILTERS: { key: Filter; label: string }[] = [
   { key: "all", label: "Todo" },
   { key: "task", label: "Tareas" },
   { key: "habit", label: "Hábitos" },
   { key: "challenge", label: "Retos" },
+  { key: "class", label: "Clases" },
 ];
 
 export default function WeekView() {
@@ -36,11 +37,12 @@ export default function WeekView() {
   const a = week.data;
   const tasks = a?.tasks ?? [];
   const habitById = new Map((a?.habits ?? []).map((h) => [h.id, h]));
-  const show = (k: ItemKind) => filter === "all" || filter === k;
+  const show = (k: ItemKind | "class") => filter === "all" || filter === k;
   const totals = {
     task: tasks.length,
     habit: (a?.habit_entries ?? []).length,
     challenge: (a?.challenges ?? []).length,
+    class: (a?.classes ?? []).length,
   };
   const weekScore = dayScore(tasks);
 
@@ -96,7 +98,7 @@ export default function WeekView() {
             {formatDay(start, { day: "numeric", month: "short" })} – {formatDay(end, { day: "numeric", month: "short" })}
           </h1>
           <p className="text-xs text-zinc-500 mt-0.5">
-            {totals.task} tareas · {totals.habit} hábitos · {totals.challenge} retos
+            {totals.task} tareas · {totals.habit} hábitos · {totals.challenge} retos{totals.class ? ` · ${totals.class} clases` : ""}
             {weekScore.rate !== null && ` · tareas ${Math.round(weekScore.rate * 100)}% cumplidas`}
           </p>
         </div>
@@ -116,7 +118,7 @@ export default function WeekView() {
         {FILTERS.map((f) => (
           <button key={f.key} type="button" role="radio" aria-checked={filter === f.key} onClick={() => setFilter(f.key)}
             className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold cursor-pointer ${filter === f.key ? "bg-white shadow-xs text-zinc-950" : "text-zinc-500"}`}>
-            {f.key !== "all" && <KindIcon kind={f.key} />} {f.label}
+            {f.key === "class" ? <GraduationCap className="w-3.5 h-3.5 text-sky-700" /> : f.key !== "all" && <KindIcon kind={f.key} />} {f.label}
           </button>
         ))}
       </div>
@@ -129,9 +131,10 @@ export default function WeekView() {
             const dayTasks = tasks.filter((t) => t.date === d).sort(byTime);
             const dayHabits = (a?.habit_entries ?? []).filter((e) => e.date === d && habitById.has(e.habit_id)).sort((x, y) => byTime(habitById.get(x.habit_id)!, habitById.get(y.habit_id)!));
             const dayChallenges = (a?.challenges ?? []).filter((c) => c.date === d).sort(byTime);
+            const dayClasses = (a?.classes ?? []).filter((c) => c.date === d);
             const s = dayScore(dayTasks);
             const isToday = d === today;
-            const empty = !(show("task") && dayTasks.length) && !(show("habit") && dayHabits.length) && !(show("challenge") && dayChallenges.length);
+            const empty = !(show("task") && dayTasks.length) && !(show("habit") && dayHabits.length) && !(show("challenge") && dayChallenges.length) && !(show("class") && dayClasses.length);
             return (
               <section key={d} aria-label={formatDay(d)} {...dropProps(d, d)}
                 className={`flex flex-col rounded-3xl border p-2.5 min-h-40 transition-colors ${dropTarget === d ? "border-emerald-500 bg-emerald-50/50" : isToday ? "border-emerald-700/40 bg-white" : "border-zinc-200/80 bg-zinc-50/50"}`}>
@@ -144,6 +147,7 @@ export default function WeekView() {
                   {s.rate !== null && <span className="text-[10px] font-semibold text-zinc-500 tabular-nums" title="Cumplimiento de tareas">{Math.round(s.rate * 100)}%</span>}
                 </header>
                 <div className="space-y-1.5 flex-1">
+                  {show("class") && dayClasses.map((o) => <ClassRow key={`${o.session_id}-${o.date}`} occ={o} compact onChanged={reload} onError={onError} />)}
                   {show("challenge") && dayChallenges.map((c) => <ChallengeRow key={c.id} challenge={c} category={catOf(c.category_id)} compact onResult={actions.reportChallenge} onEdit={actions.editChallenge} />)}
                   {show("habit") && dayHabits.map((e) => (
                     <HabitRow key={`${e.habit_id}-${e.date}`} habit={habitById.get(e.habit_id)!} entry={e} category={catOf(habitById.get(e.habit_id)!.category_id)} compact onChanged={reload} onError={onError} onOpen={actions.editHabit} />
@@ -173,6 +177,7 @@ export default function WeekView() {
 
       <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-zinc-400">
         {(Object.keys(KIND_META) as ItemKind[]).map((k) => <span key={k} className="inline-flex items-center gap-1"><KindIcon kind={k} /> {KIND_META[k].label}</span>)}
+        <span className="inline-flex items-center gap-1"><GraduationCap className="w-3.5 h-3.5 text-sky-700" /> Clase</span>
       </p>
     </div>
   );

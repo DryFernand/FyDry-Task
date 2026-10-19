@@ -5,8 +5,9 @@ from typing import Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
-from app.models import Challenge, Habit, TaskCategory, TaskDayReview, TaskItem
+from app.models import Challenge, Habit, HabitLog, Subject, TaskCategory, TaskDayReview, TaskItem
 from app.services import habits as hs
+from app.services import schedules as sched
 
 WEIGHTS = {"done": 1.0, "partial": 0.5, "not_done": 0.0, "postponed": 0.0}
 WEEKDAYS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
@@ -326,17 +327,136 @@ def challenge_insights(m: Dict) -> List[str]:
     return out
 
 
+# ===================== Clases =====================
+HEAVY_DAY_MIN = 240  # 4 h de clase o más = día cargado
+
+
+def compute_classes(db: Session, user_id: str, start: date, end: date, today: date) -> Dict:
+    end_eval = min(end, today)
+    occ = [o for o in sched.occurrences(db, user_id, start, end_eval, include_archived=True) if o["date"] < today.isoformat() or o["attendance"]]
+    subjects = {s.id: s for s in db.query(Subject).filter(Subject.user_id == user_id).all()}
+
+    per = defaultdict(lambda: {"classes": 0, "attended": 0, "absent": 0})
+    for o in occ:
+        r = per[o["subject_id"]]
+        r["classes"] += 1
+        if o["attendance"] == "attended":
+            r["attended"] += 1
+        elif o["attendance"] == "absent":
+            r["absent"] += 1
+    att = sum(r["attended"] for r in per.values())
+    abs_ = sum(r["absent"] for r in per.values())
+
+    # Asignaciones por materia (fecha de entrega en el periodo)
+    tasks = (
+        db.query(TaskItem)
+        .filter(TaskItem.user_id == user_id, TaskItem.subject_id.isnot(None), TaskItem.is_deleted.is_(False))
+        .filter(TaskItem.date >= start, TaskItem.date <= end)
+        .all()
+    )
+    asg = defaultdict(lambda: {"total": 0, "evaluated": [], "overdue": 0, "exams": 0, "upcoming_exams": 0})
+    for t in tasks:
+        if t.status == "postponed":
+            continue
+        a = asg[t.subject_id]
+        a["total"] += 1
+        if t.assignment_type == "examen":
+            a["exams"] += 1
+            if t.status == "pending" and t.date >= today:
+                a["upcoming_exams"] += 1
+        if t.status in WEIGHTS:
+            a["evaluated"].append(t)
+        elif t.date < today:
+            a["overdue"] += 1
+
+    by_subject = []
+    for sid in set(per) | set(asg):
+        if sid not in subjects:
+            continue
+        r, a = per.get(sid, {"classes": 0, "attended": 0, "absent": 0}), asg.get(sid)
+        marked = r["attended"] + r["absent"]
+        by_subject.append({
+            "subject_id": sid,
+            "name": subjects[sid].name,
+            "color": subjects[sid].color,
+            "classes": r["classes"],
+            "attended": r["attended"],
+            "absent": r["absent"],
+            "attendance_rate": round(r["attended"] / marked, 3) if marked else None,
+            "assignments": a["total"] if a else 0,
+            "assignment_rate": _rate(a["evaluated"]) if a else None,
+            "overdue": a["overdue"] if a else 0,
+            "exams": a["exams"] if a else 0,
+            "upcoming_exams": a["upcoming_exams"] if a else 0,
+        })
+    by_subject.sort(key=lambda x: -(x["classes"] + x["assignments"]))
+
+    # ¿Los días con muchas clases cumples menos tareas?
+    mins_by_day: Dict[str, int] = defaultdict(int)
+    for o in occ:
+        h1, m1 = map(int, o["start_time"].split(":"))
+        h2, m2 = map(int, o["end_time"].split(":"))
+        mins_by_day[o["date"]] += (h2 * 60 + m2) - (h1 * 60 + m1)
+    day_tasks: Dict[str, List[TaskItem]] = defaultdict(list)
+    for t in db.query(TaskItem).filter(TaskItem.user_id == user_id, TaskItem.is_deleted.is_(False), TaskItem.date >= start, TaskItem.date <= end_eval):
+        if t.status in WEIGHTS:
+            day_tasks[t.date.isoformat()].append(t)
+    heavy = [t for d, ts in day_tasks.items() if mins_by_day.get(d, 0) >= HEAVY_DAY_MIN for t in ts]
+    light = [t for d, ts in day_tasks.items() if mins_by_day.get(d, 0) < HEAVY_DAY_MIN for t in ts]
+
+    m = {
+        "classes": len(occ),
+        "attended": att,
+        "absent": abs_,
+        "unmarked": len(occ) - att - abs_,
+        "attendance_rate": round(att / (att + abs_), 3) if att + abs_ else None,
+        "by_subject": by_subject,
+        "assignments_overdue": sum(x["overdue"] for x in by_subject),
+        "upcoming_exams": sum(x["upcoming_exams"] for x in by_subject),
+        "heavy_days": {"days": len({d for d in day_tasks if mins_by_day.get(d, 0) >= HEAVY_DAY_MIN}), "task_rate": _rate(heavy)},
+        "light_days": {"days": len({d for d in day_tasks if mins_by_day.get(d, 0) < HEAVY_DAY_MIN}), "task_rate": _rate(light)},
+        "first_day": min((o["date"] for o in occ if o["attendance"]), default=None),
+        "active_days": len({o["date"] for o in occ if o["attendance"]}),
+    }
+    m["insights"] = class_insights(m)
+    return m
+
+
+def class_insights(m: Dict) -> List[str]:
+    if not m["classes"] and not m["by_subject"]:
+        return ["Aún no hay clases en este periodo. Crea tu horario para ver tu asistencia y tus entregas por materia."]
+    out = []
+    if m["attendance_rate"] is not None:
+        out.append(f"Asististe al {_pct(m['attendance_rate'])} de tus clases ({m['attended']} de {m['attended'] + m['absent']}).")
+    if m["unmarked"]:
+        out.append(f"Tienes {m['unmarked']} clase(s) sin marcar asistencia.")
+    low = [x for x in m["by_subject"] if x["attendance_rate"] is not None and x["attended"] + x["absent"] >= 3 and x["attendance_rate"] < 0.8]
+    if low:
+        w = min(low, key=lambda x: x["attendance_rate"])
+        out.append(f"En {w['name']} tu asistencia es de {_pct(w['attendance_rate'])}: es la materia donde más faltas.")
+    late = [x for x in m["by_subject"] if x["overdue"]]
+    if late:
+        w = max(late, key=lambda x: x["overdue"])
+        out.append(f"Vas más atrasado en {w['name']}: {w['overdue']} entrega(s) vencida(s) sin marcar.")
+    if m["upcoming_exams"]:
+        out.append(f"Tienes {m['upcoming_exams']} examen(es) por delante en este periodo. ¡Prepáralos con tiempo!")
+    h, l = m["heavy_days"], m["light_days"]
+    if h["days"] >= 2 and l["days"] >= 2 and h["task_rate"] is not None and l["task_rate"] is not None and l["task_rate"] - h["task_rate"] >= 0.15:
+        out.append(f"Los días con 4 h o más de clase cumples {_pct(h['task_rate'])} de tus tareas, frente a {_pct(l['task_rate'])} los demás días. Planifica menos esos días.")
+    return out or ["Todo en orden con tus clases."]
+
+
 # ===================== Resumen general =====================
 def compute_all(db: Session, user_id: str, start: date, end: date, today: date) -> Dict:
     t = compute_tasks(db, user_id, start, end, today)
     h = compute_habits(db, user_id, start, end, today)
     c = compute_challenges(db, user_id, start, end, today)
-    firsts = [x for x in (t["first_day"], h["first_day"], c["first_day"]) if x]
+    k = compute_classes(db, user_id, start, end, today)
+    firsts = [x for x in (t["first_day"], h["first_day"], c["first_day"], k["first_day"]) if x]
     days = set()
     # días activos combinados: cualquier día con algo marcado
     for d in db.query(TaskItem.date).filter(TaskItem.user_id == user_id, TaskItem.status != "pending", TaskItem.date >= start, TaskItem.date <= min(end, today)).distinct():
         days.add(d[0])
-    from app.models import HabitLog  # noqa: E402  (evita import circular en el arranque)
     for d in db.query(HabitLog.date).filter(HabitLog.user_id == user_id, HabitLog.date >= start, HabitLog.date <= min(end, today)).distinct():
         days.add(d[0])
     for d in db.query(Challenge.date).filter(Challenge.user_id == user_id, Challenge.status != "pending", Challenge.date >= start, Challenge.date <= min(end, today)).distinct():
@@ -348,11 +468,13 @@ def compute_all(db: Session, user_id: str, start: date, end: date, today: date) 
             "tasks_rate": t["completion_rate"],
             "habits_rate": h["rate"],
             "challenges_rate": c["rate"],
+            "attendance_rate": k["attendance_rate"],
             "active_days": len(days),
             "first_day": min(firsts) if firsts else None,
         },
-        "insights": t["insights"][:2] + h["insights"][:2] + c["insights"][:1],
+        "insights": t["insights"][:2] + h["insights"][:2] + c["insights"][:1] + (k["insights"][:1] if k["classes"] or k["by_subject"] else []),
         "tasks": t,
         "habits": h,
         "challenges": c,
+        "classes": k,
     }

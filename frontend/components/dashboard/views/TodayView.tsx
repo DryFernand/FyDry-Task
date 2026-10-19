@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { AlertCircle, CalendarPlus, Inbox, Loader2, Moon, Plus, Repeat, SlidersHorizontal, Sun, Trophy } from "lucide-react";
+import { AlertCircle, CalendarPlus, GraduationCap, Inbox, Loader2, Moon, Plus, Repeat, SlidersHorizontal, Sun, Trophy } from "lucide-react";
 import TaskRow from "../TaskRow";
-import { ChallengeRow, HabitRow, KindIcon } from "../ItemRows";
+import { ChallengeRow, ClassRow, HabitRow, KindIcon } from "../ItemRows";
 import { useDash } from "../DashContext";
 import { useLoad } from "../useLoad";
 import { addDays, Agenda, api, dayScore, formatDay, STATUS_META, Task, todayISO } from "@/lib/tasks";
@@ -24,6 +24,7 @@ export function unmarkedIn(a: Agenda | null): { count: number; oldest?: string }
     ...a.tasks.filter((t) => t.status === "pending").map((t) => t.date!),
     ...a.habit_entries.filter((e) => !e.status).map((e) => e.date),
     ...a.challenges.filter((c) => c.status === "pending").map((c) => c.date),
+    ...(a.classes ?? []).filter((c) => !c.attendance).map((c) => c.date),
   ].sort();
   return { count: dates.length, oldest: dates[0] };
 }
@@ -63,6 +64,7 @@ export default function TodayView() {
   const habitById = new Map((a?.habits ?? []).map((h) => [h.id, h]));
   const entries = (a?.habit_entries ?? []).filter((e) => habitById.has(e.habit_id)).sort((x, y) => byTime(habitById.get(x.habit_id)!, habitById.get(y.habit_id)!));
   const challenges = [...(a?.challenges ?? [])].sort(byTime);
+  const classes = a?.classes ?? [];
   const pendingTasks = tasks.filter((t) => t.status === "pending").sort(byTime);
   const markedTasks = tasks.filter((t) => t.status !== "pending").sort(byTime);
   const score = dayScore(tasks);
@@ -119,7 +121,7 @@ export default function TodayView() {
         <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-amber-50 border border-amber-200/70">
           <div className="flex items-center gap-2 text-xs text-amber-900">
             <AlertCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
-            <span>Tienes <strong>{unmarked.count}</strong> {unmarked.count === 1 ? "cosa" : "cosas"} sin marcar de días anteriores (tareas, hábitos o retos).</span>
+            <span>Tienes <strong>{unmarked.count}</strong> {unmarked.count === 1 ? "cosa" : "cosas"} sin marcar de días anteriores (tareas, hábitos, retos o clases).</span>
           </div>
           <button type="button" onClick={() => actions.openClose(unmarked.oldest!)} className="px-3 py-1.5 rounded-xl bg-white border border-amber-300 text-amber-900 text-[11px] font-semibold cursor-pointer hover:bg-amber-100">
             Revisar {formatDay(unmarked.oldest, { weekday: "short", day: "numeric" })}
@@ -129,6 +131,16 @@ export default function TodayView() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
         <div className="lg:col-span-2 space-y-6 order-2 lg:order-1">
+          {/* ===== Clases (informativas, con asistencia) ===== */}
+          {classes.length > 0 && (
+            <section className="space-y-3">
+              <h2 className="flex items-center gap-1.5 text-sm font-bold text-zinc-900"><GraduationCap className="w-3.5 h-3.5 text-sky-700" aria-hidden="true" /> Clases de hoy <span className="text-zinc-400 font-semibold">· {classes.length}</span></h2>
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">
+                {classes.map((o) => <ClassRow key={`${o.session_id}-${o.date}`} occ={o} onChanged={reloadAll} onError={onError} />)}
+              </div>
+            </section>
+          )}
+
           {/* ===== Tareas ===== */}
           <section className="space-y-3">
             <SectionTitle icon={<KindIcon kind="task" />} title="Tareas" count={tasks.length} />
@@ -229,9 +241,10 @@ export default function TodayView() {
                 );
               })}
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-2">
+            <div className={`mt-4 grid gap-2 ${classes.length ? "grid-cols-3" : "grid-cols-2"}`}>
               <Meter label="Hábitos" value={`${habitsDone}/${entries.length}`} sub="hechos hoy" />
               <Meter label="Retos" value={`${challengesDone}/${challenges.length}`} sub="con resultado" />
+              {classes.length > 0 && <Meter label="Clases" value={`${classes.filter((c) => c.attendance === "attended").length}/${classes.length}`} sub="asistidas" />}
             </div>
           </div>
 
