@@ -8,7 +8,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models import TaskItem, TaskNotificationPrefs, TaskPushSubscription
+from app.models import Challenge, Habit, HabitLog, TaskItem, TaskNotificationPrefs, TaskPushSubscription
+from app.services import habits as hs
 
 logger = logging.getLogger("fydry_task_push")
 
@@ -67,7 +68,7 @@ def _at(day, hhmm: str, tz: ZoneInfo) -> datetime:
 def run_due(db: Session, sender: Sender, now_utc: Optional[datetime] = None) -> Dict[str, int]:
     """Envía los avisos vencidos. Idempotente: cada aviso se marca al enviarse."""
     now_utc = now_utc or datetime.now(ZoneInfo("UTC"))
-    sent = {"reminders": 0, "day_close": 0, "weekly_plan": 0, "weekly_summary": 0}
+    sent = {"reminders": 0, "habit_reminders": 0, "challenge_reminders": 0, "habit_results": 0, "day_close": 0, "weekly_plan": 0, "weekly_summary": 0}
     user_ids = {u for (u,) in db.query(TaskPushSubscription.user_id).distinct().all()}
 
     for uid in user_ids:
@@ -91,9 +92,45 @@ def run_due(db: Session, sender: Sender, now_utc: Optional[datetime] = None) -> 
                     send_to_user(db, uid, {"title": f"⏰ {it.time} · {it.title}", "body": "Tienes una tarea en tu día.", "url": "/dashboard?tab=today", "tag": f"task-{it.id}"}, sender)
                     sent["reminders"] += 1
 
-        # 2. Cierre del día (solo si hoy tenía tareas)
+        def due(hhmm: str) -> bool:
+            at = _at(today, hhmm, tz)
+            return at - timedelta(minutes=prefs.reminder_minutes) <= now <= at + timedelta(hours=1)
+
+        habits = db.query(Habit).filter(Habit.user_id == uid, Habit.status == "active").all()
+        today_habits = [h for h in habits if hs.scheduled_dates(h, today, today)]
+        logged = {hid for (hid,) in db.query(HabitLog.habit_id).filter(HabitLog.user_id == uid, HabitLog.date == today).all()}
+
+        # 1b. Recordatorio de hábitos y retos con hora
+        if prefs.task_reminders:
+            for h in today_habits:
+                if h.time and h.id not in logged and h.last_reminder_on != today and due(h.time):
+                    h.last_reminder_on = today
+                    send_to_user(db, uid, {"title": f"🔁 {h.time} · {h.title}", "body": "Es hora de tu hábito.", "url": "/dashboard?tab=today", "tag": f"habit-{h.id}"}, sender)
+                    sent["habit_reminders"] += 1
+            for c in db.query(Challenge).filter(Challenge.user_id == uid, Challenge.date == today, Challenge.time.isnot(None), Challenge.status == "pending", Challenge.reminder_sent_at.is_(None)).all():
+                if due(c.time):
+                    c.reminder_sent_at = now_utc.replace(tzinfo=None)
+                    send_to_user(db, uid, {"title": f"🏁 {c.time} · Reto: {c.title}", "body": "¡A por tu reto de hoy!", "url": "/dashboard?tab=today", "tag": f"challenge-{c.id}"}, sender)
+                    sent["challenge_reminders"] += 1
+
+        # 1c. Resultado de la evaluación de hábitos en construcción
+        hs.evaluate(db, uid, today)
+        for h in db.query(Habit).filter(Habit.user_id == uid, Habit.evaluated_on.isnot(None), Habit.result_notified.is_(False)).all():
+            h.result_notified = True
+            if h.status == "needs_adjust":
+                payload = {"title": f"💪 “{h.title}” aún no es hábito", "body": f"Cumpliste {round((h.last_rate or 0) * 100)}% (meta {round(h.target_rate * 100)}%). Reajusta el tiempo de adaptación.", "url": "/dashboard?tab=habits", "tag": f"habit-eval-{h.id}"}
+            else:
+                payload = {"title": f"🎉 “{h.title}” ya es un hábito", "body": f"Lo cumpliste {round((h.last_rate or 0) * 100)}% de las veces. ¡Lo lograste!", "url": "/dashboard?tab=habits", "tag": f"habit-eval-{h.id}"}
+            send_to_user(db, uid, payload, sender)
+            sent["habit_results"] += 1
+
+        # 2. Cierre del día (solo si hoy había tareas, hábitos o retos)
         if prefs.day_close and prefs.last_day_close_sent != today and now >= _at(today, prefs.day_close_time, tz):
-            has_tasks = db.query(TaskItem.id).filter(TaskItem.user_id == uid, TaskItem.date == today, TaskItem.is_deleted.is_(False)).first()
+            has_tasks = (
+                db.query(TaskItem.id).filter(TaskItem.user_id == uid, TaskItem.date == today, TaskItem.is_deleted.is_(False)).first()
+                or today_habits
+                or db.query(Challenge.id).filter(Challenge.user_id == uid, Challenge.date == today).first()
+            )
             prefs.last_day_close_sent = today
             if has_tasks:
                 send_to_user(db, uid, {"title": "🌙 ¿Cómo te fue hoy?", "body": "Haz el cierre del día: marca lo que hiciste y lo que pasa a mañana.", "url": "/dashboard?tab=today&close=1", "tag": "day-close"}, sender)

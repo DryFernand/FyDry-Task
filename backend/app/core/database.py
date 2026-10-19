@@ -15,7 +15,11 @@ def _is_placeholder(url: str) -> bool:
 
 
 def resolve_database_url() -> str:
-    """Pooler de Supabase (IPv4, apto para serverless) si está configurado; si no, DATABASE_URL."""
+    """Pooler de Supabase (IPv4, apto para serverless) si está configurado; si no, DATABASE_URL.
+    Un DATABASE_URL de SQLite es una elección explícita de base local y gana siempre:
+    así una prueba local nunca termina escribiendo en la base remota del .env."""
+    if settings.DATABASE_URL.startswith("sqlite"):
+        return settings.DATABASE_URL
     if settings.DATABASE_POOLER_URL and not _is_placeholder(settings.DATABASE_POOLER_URL):
         return settings.DATABASE_POOLER_URL
     if not _is_placeholder(settings.DATABASE_URL):

@@ -1,4 +1,5 @@
 """Self-check de tareas, análisis, perfil IA y avisos. Ejecutar desde backend/: python tests/check_tasks.py"""
+import json
 import os
 import sys
 import tempfile
@@ -67,34 +68,73 @@ assert c.post(f"{API}/tasks/{t2['id']}/postpone", json={}).status_code == 409
 assert c.patch(f"{API}/tasks/{t2['id']}", json={"status": "done"}).status_code == 409
 ok(c.patch(f"{API}/tasks/{cp3['id']}", json={"status": "not_done"}))
 
-# --- Recurrencias: se generan al consultar, sin duplicar; borrar una instancia no la regenera
-rec = ok(c.post(f"{API}/recurrences", json={"title": "Gimnasio", "category_id": health, "weekdays": [0, 2, 4], "start_date": str(MON), "time": "07:00"}), 201)
-assert rec["weekdays"] == [0, 2, 4]
-week1 = ok(c.get(f"{API}/tasks", params={"start": str(MON), "end": str(MON + timedelta(days=6))}))
-gym = [x for x in week1 if x["recurrence_id"] == rec["id"]]
-assert [x["date"] for x in gym] == [str(MON), str(MON + timedelta(days=2)), str(MON + timedelta(days=4))]
-assert len(ok(c.get(f"{API}/tasks", params={"start": str(MON), "end": str(MON + timedelta(days=6))}))) == len(week1)
-ok(c.delete(f"{API}/tasks/{gym[1]['id']}"), 204)
-week1b = ok(c.get(f"{API}/tasks", params={"start": str(MON), "end": str(MON + timedelta(days=6))}))
-assert len([x for x in week1b if x["recurrence_id"] == rec["id"]]) == 2
-# Mover una instancia a otro día no la duplica
-moved = ok(c.patch(f"{API}/tasks/{gym[2]['id']}", json={"date": str(MON + timedelta(days=5))}))
-assert moved["recurrence_id"] is None
-week1c = ok(c.get(f"{API}/tasks", params={"start": str(MON), "end": str(MON + timedelta(days=6))}))
-assert len([x for x in week1c if x["title"] == "Gimnasio"]) == 2
-ok(c.patch(f"{API}/tasks/{gym[0]['id']}", json={"status": "partial"}))
-ok(c.patch(f"{API}/tasks/{moved['id']}", json={"status": "done"}))
-
-# Editar la regla cambia solo las futuras pendientes
-ok(c.patch(f"{API}/recurrences/{rec['id']}", params={"today": str(TODAY)}, json={"weekdays": [1], "title": "Gym"}))
-week2 = ok(c.get(f"{API}/tasks", params={"start": str(MON + timedelta(days=7)), "end": str(MON + timedelta(days=13))}))
-assert [(x["date"], x["title"]) for x in week2 if x["recurrence_id"] == rec["id"]] == [(str(MON + timedelta(days=8)), "Gym")]
-
-# --- Copiar semana (sin recurrentes ni pospuestas originales)
+# --- Copiar semana (sin las pospuestas originales: su copia ya está en otro día)
 copied = ok(c.post(f"{API}/tasks/copy-week", json={"from_start": str(MON), "to_start": str(MON + timedelta(days=7))}))
-assert sorted(x["title"] for x in copied) == ["Gimnasio", "Informe", "Llamar al banco"], copied
+assert sorted(x["title"] for x in copied) == ["Informe", "Llamar al banco"], copied
 assert all(x["status"] == "pending" for x in copied)
 assert c.post(f"{API}/tasks/copy-week", json={"from_start": str(MON + timedelta(days=1)), "to_start": str(MON)}).status_code == 422
+
+D = lambda n: str(MON + timedelta(days=n))  # noqa: E731
+
+# --- Hábitos: "ya lo tengo" (recordatorio) y "en construcción" (evaluado)
+cama = ok(c.post(f"{API}/habits", json={"title": "Arreglar la cama", "weekdays": [0, 1, 2, 3, 4, 5, 6], "start_date": D(0)}), 201)
+assert cama["kind"] == "established" and cama["period_days"] is None
+assert c.post(f"{API}/habits", json={"title": "x", "weekdays": [1], "kind": "building", "start_date": D(0)}).status_code == 422
+gym = ok(c.post(f"{API}/habits", json={"title": "Gimnasio", "weekdays": [1, 3], "kind": "building", "start_date": D(0), "period_days": 14, "time": "07:00", "category_id": health}), 201)
+ag = ok(c.get(f"{API}/agenda", params={"start": D(0), "end": D(6), "today": str(TODAY)}))
+assert [e["date"] for e in ag["habit_entries"] if e["habit_id"] == gym["id"]] == [D(1), D(3)]
+assert len([e for e in ag["habit_entries"] if e["habit_id"] == cama["id"]]) == 7
+assert c.put(f"{API}/habits/{gym['id']}/log", json={"date": D(2), "status": "done"}).status_code == 422, "miércoles no toca"
+for n in (1, 3):
+    ok(c.put(f"{API}/habits/{gym['id']}/log", json={"date": D(n), "status": "done"}))
+for n in (0, 1, 2):
+    ok(c.put(f"{API}/habits/{cama['id']}/log", json={"date": D(n), "status": "done"}))
+ok(c.put(f"{API}/habits/{cama['id']}/log", json={"date": D(2), "status": None}))  # desmarcar
+ok(c.put(f"{API}/habits/{cama['id']}/log", json={"date": D(2), "status": "done"}))
+current["u"] = users["b"]
+assert c.put(f"{API}/habits/{gym['id']}/log", json={"date": D(1), "status": "done"}).status_code == 404
+current["u"] = users["a"]
+
+st = {h["id"]: h for h in ok(c.get(f"{API}/habits", params={"today": str(TODAY)}))}[gym["id"]]["stats"]
+# Toca 4 veces en 14 días (mar/jue); meta 80% -> 4. Lleva 2 de 3 y queda 1: ya no llega
+assert (st["expected_total"], st["expected_so_far"], st["done"], st["needed"], st["on_track"]) == (4, 3, 2, 4, False), st
+ok(c.put(f"{API}/habits/{gym['id']}/log", json={"date": D(8), "status": "done"}))
+
+# Terminado el periodo con 3/4 = 75% < 80% -> necesita reajuste
+hs_after = {h["id"]: h for h in ok(c.get(f"{API}/habits", params={"today": D(14)}))}
+assert hs_after[gym["id"]]["status"] == "needs_adjust" and hs_after[gym["id"]]["last_rate"] == 0.75
+assert not [e for e in ok(c.get(f"{API}/agenda", params={"start": D(14), "end": D(20), "today": D(14)}))["habit_entries"] if e["habit_id"] == gym["id"]]
+# Extender 7 días y cumplir todo -> se convierte en hábito real
+ext = ok(c.post(f"{API}/habits/{gym['id']}/extend", json={"days": 7}))
+assert ext["status"] == "active" and ext["period_days"] == 21 and ext["adjustments"] == 1
+for n in (10, 15, 17):
+    ok(c.put(f"{API}/habits/{gym['id']}/log", json={"date": D(n), "status": "done"}))
+done_h = {h["id"]: h for h in ok(c.get(f"{API}/habits", params={"today": D(21)}))}[gym["id"]]
+assert done_h["kind"] == "established" and done_h["consolidated_on"] == D(21) and done_h["status"] == "active", done_h
+assert [e["date"] for e in ok(c.get(f"{API}/agenda", params={"start": D(22), "end": D(28), "today": D(22)}))["habit_entries"] if e["habit_id"] == gym["id"]] == [D(22), D(24)]
+
+# Reiniciar un hábito que no se logró
+leer = ok(c.post(f"{API}/habits", json={"title": "Leer", "weekdays": [0, 1, 2, 3, 4], "kind": "building", "start_date": D(0), "period_days": 7, "target_rate": 0.9}), 201)
+assert {h["id"]: h for h in ok(c.get(f"{API}/habits", params={"today": D(8)}))}[leer["id"]]["status"] == "needs_adjust"
+rs = ok(c.post(f"{API}/habits/{leer['id']}/restart", json={"start_date": D(8), "period_days": 14}))
+assert rs["status"] == "active" and rs["start_date"] == D(8) and rs["evaluated_on"] is None
+assert c.post(f"{API}/habits/{cama['id']}/extend", json={"days": 7}).status_code == 422
+tmp = ok(c.post(f"{API}/habits", json={"title": "Temporal", "weekdays": [0], "start_date": D(0)}), 201)
+ok(c.put(f"{API}/habits/{tmp['id']}/log", json={"date": D(0), "status": "done"}))
+ok(c.delete(f"{API}/habits/{tmp['id']}"), 204)
+
+# --- Retos: la nota del resultado es obligatoria
+r1 = ok(c.post(f"{API}/challenges", json={"title": "Caminar 10k en 30 min", "date": str(TODAY), "time": "06:00"}), 201)
+assert c.post(f"{API}/challenges/{r1['id']}/result", json={"status": "achieved"}).status_code == 422
+assert c.post(f"{API}/challenges/{r1['id']}/result", json={"status": "achieved", "note": "  "}).status_code == 422
+got = ok(c.post(f"{API}/challenges/{r1['id']}/result", json={"status": "partial", "note": " Corrí 10k pero en 40 min "}))
+assert got["status"] == "partial" and got["result_note"] == "Corrí 10k pero en 40 min"
+undo = ok(c.post(f"{API}/challenges/{r1['id']}/result", json={"status": "pending"}))
+assert undo["result_note"] is None and undo["status_at"] is None
+ok(c.post(f"{API}/challenges/{r1['id']}/result", json={"status": "achieved", "note": "10k en 29 min"}))
+r2 = ok(c.post(f"{API}/challenges", json={"title": "Sin azúcar hoy", "date": D(0)}), 201)
+ok(c.post(f"{API}/challenges/{r2['id']}/result", json={"status": "failed", "note": "Comí postre"}))
+assert len(ok(c.get(f"{API}/challenges", params={"start": D(0), "end": str(TODAY)}))) == 2
 
 # --- Cierre del día
 ok(c.put(f"{API}/reviews/{MON}", json={"energy": 4, "note": " bien "}))
@@ -103,16 +143,23 @@ assert r["energy"] == 5 and r["note"] is None
 assert c.put(f"{API}/reviews/{MON}", json={"energy": 9}).status_code == 422
 
 # --- Análisis
-m = ok(c.get(f"{API}/analytics", params={"start": str(MON), "end": str(MON + timedelta(days=6)), "today": str(TODAY)}))
-# done: Informe, Gimnasio(movido) · partial: Gimnasio lunes · not_done: banco · postponed: 3
-assert m["counts"] == {"done": 2, "partial": 1, "not_done": 1, "postponed": 3}, m["counts"]
-assert m["evaluated"] == 7 and abs(m["completion_rate"] - 2.5 / 7) < 0.01
+full = ok(c.get(f"{API}/analytics", params={"start": str(MON), "end": str(MON + timedelta(days=6)), "today": str(TODAY)}))
+m = full["tasks"]
+# done: Informe · not_done: banco · postponed: 3
+assert m["counts"] == {"done": 1, "partial": 0, "not_done": 1, "postponed": 3}, m["counts"]
+assert m["evaluated"] == 5 and abs(m["completion_rate"] - 1 / 5) < 0.01
 assert m["top_postponed"][0] == {"title": "Llamar al banco", "count": 3}
 assert any("pospusiste 3 veces" in s for s in m["insights"]), m["insights"]
 assert m["unreviewed"] == 0
-# Recurrencia materializada hacia la semana actual sin marcar -> cuenta como "sin marcar"
+# Hábitos de esa semana: cama 3/7 + gimnasio 2/2
+h = full["habits"]
+assert (h["expected"], h["done"]) == (9, 5), (h["expected"], h["done"])
+assert full["challenges"]["counts"] == {"achieved": 0, "partial": 0, "failed": 1}
+assert set(full["overview"]) >= {"tasks_rate", "habits_rate", "challenges_rate", "active_days", "first_day"}
+# La semana actual tiene la copia de "Informe" sin marcar -> cuenta como "sin marcar"
 m2 = ok(c.get(f"{API}/analytics", params={"start": str(MON + timedelta(days=7)), "end": str(TODAY), "today": str(TODAY)}))
-assert m2["unreviewed"] >= 1
+assert m2["tasks"]["unreviewed"] >= 1
+assert m2["challenges"]["counts"]["achieved"] == 1
 
 # --- Perfil IA: exige 2 semanas; con datos suficientes llama a la IA (simulada)
 assert c.post(f"{API}/profile/generate", params={"today": str(TODAY)}).status_code == 422
@@ -123,9 +170,12 @@ for k in range(20):
 db.commit()
 db.close()
 calls = []
+real_compact = ai_profile._compact
 ai_profile.generate = lambda metrics: calls.append(metrics) or {"type": "Constante", "summary": "s", "reasons": ["r"], "recommendations": ["x"]}
 p = ok(c.post(f"{API}/profile/generate", params={"today": str(TODAY)}))
-assert p["profile"]["type"] == "Constante" and calls and "insights" in calls[0]
+assert p["profile"]["type"] == "Constante" and calls and {"tasks", "habits", "challenges"} <= set(calls[0])
+compact = json.dumps(real_compact(calls[0]), ensure_ascii=False)
+assert "Gimnasio" in compact and "29 min" not in compact, "las notas de retos no se envían a la IA"
 assert ok(c.get(f"{API}/profile"))["id"] == p["id"]
 current["u"] = users["b"]
 assert ok(c.get(f"{API}/profile")) is None
@@ -146,6 +196,8 @@ db.commit()
 now = datetime(TODAY.year, TODAY.month, TODAY.day, 18, 50, tzinfo=timezone.utc)
 res = notifications.run_due(db, fake, now)
 assert res["reminders"] == 1 and res["day_close"] == 0, res
+assert res["habit_results"] == 1 and "habit-eval-" + gym["id"] in sent, "aviso: Gimnasio ya es hábito"
+assert notifications.run_due(db, fake, now)["habit_results"] == 0
 assert notifications.run_due(db, fake, now)["reminders"] == 0, "no repetir el aviso"
 night = datetime(TODAY.year, TODAY.month, TODAY.day, 1, 30, tzinfo=timezone.utc) + timedelta(days=1)  # 21:30 local
 assert notifications.run_due(db, fake, night)["day_close"] == 1
@@ -162,4 +214,4 @@ assert db.query(TaskPushSubscription).count() == 0
 assert db.get(TaskNotificationPrefs, "user-a").reminder_minutes == 15
 db.close()
 
-print("OK: checks de tareas, análisis, perfil y avisos pasaron")
+print("OK: checks de tareas, hábitos, retos, análisis, perfil y avisos pasaron")

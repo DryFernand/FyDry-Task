@@ -3,6 +3,7 @@ from sqlalchemy import (
     Boolean,
     Column,
     Date,
+    Float,
     DateTime,
     ForeignKey,
     Integer,
@@ -38,7 +39,7 @@ class TaskCategory(Base, TimestampMixin):
 
 
 class TaskRecurrence(Base, TimestampMixin):
-    """Regla 'cada lunes, miércoles y viernes'. Sus tareas se generan al consultar un rango."""
+    """LEGADO: las recurrentes se migraron a hábitos (migración 0002). Se conserva la tabla por el historial."""
     __tablename__ = "task_recurrences"
 
     id = Column(String(36), primary_key=True, default=_uuid)
@@ -73,6 +74,62 @@ class TaskItem(Base, TimestampMixin):
     position = Column(Integer, nullable=False, default=0)
     # Las instancias de una recurrencia se borran de forma lógica para que no se regeneren
     is_deleted = Column(Boolean, nullable=False, default=False)
+    reminder_sent_at = Column(DateTime, nullable=True)
+
+
+HABIT_KINDS = ("building", "established")  # en construcción / hábito que ya tienes
+HABIT_STATUSES = ("active", "needs_adjust", "archived")
+CHALLENGE_STATUSES = ("pending", "achieved", "partial", "failed")
+
+
+class Habit(Base, TimestampMixin):
+    """Rutina en días fijos. 'building' se evalúa al terminar su periodo de adaptación."""
+    __tablename__ = "habits"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    user_id = Column(String(36), nullable=False, index=True)
+    title = Column(String(200), nullable=False)
+    category_id = Column(String(36), ForeignKey("task_categories.id", ondelete="SET NULL"), nullable=True)
+    time = Column(String(5), nullable=True)
+    weekdays = Column(String(20), nullable=False)  # "0,2,4" (0 = lunes)
+    kind = Column(String(12), nullable=False, default="established")
+    status = Column(String(12), nullable=False, default="active")
+    start_date = Column(Date, nullable=False)
+    period_days = Column(Integer, nullable=True)  # solo 'building'
+    target_rate = Column(Float, nullable=False, default=0.8)
+    consolidated_on = Column(Date, nullable=True)  # cuando pasó de 'building' a hábito real
+    evaluated_on = Column(Date, nullable=True)
+    last_rate = Column(Float, nullable=True)
+    result_notified = Column(Boolean, nullable=False, default=False)
+    adjustments = Column(Integer, nullable=False, default=0)
+    last_reminder_on = Column(Date, nullable=True)
+    position = Column(Integer, nullable=False, default=0)
+
+
+class HabitLog(Base, TimestampMixin):
+    __tablename__ = "habit_logs"
+    __table_args__ = (UniqueConstraint("habit_id", "date", name="uq_habit_logs_habit_date"),)
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    habit_id = Column(String(36), ForeignKey("habits.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(String(36), nullable=False, index=True)
+    date = Column(Date, nullable=False)
+    status = Column(String(10), nullable=False)  # done | not_done
+
+
+class Challenge(Base, TimestampMixin):
+    """Reto de un día. Al cerrarlo, la nota del resultado es obligatoria."""
+    __tablename__ = "challenges"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    user_id = Column(String(36), nullable=False, index=True)
+    title = Column(String(200), nullable=False)
+    category_id = Column(String(36), ForeignKey("task_categories.id", ondelete="SET NULL"), nullable=True)
+    date = Column(Date, nullable=False, index=True)
+    time = Column(String(5), nullable=True)
+    status = Column(String(10), nullable=False, default="pending")
+    result_note = Column(Text, nullable=True)
+    status_at = Column(DateTime, nullable=True)
     reminder_sent_at = Column(DateTime, nullable=True)
 
 

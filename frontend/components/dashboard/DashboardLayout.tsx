@@ -1,24 +1,31 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
-import { AlertCircle, BarChart3, BrainCircuit, CalendarDays, CheckCircle2, Loader2, LogOut, Menu, Plus, Settings, Sun, X } from "lucide-react";
+import { AlertCircle, BarChart3, BrainCircuit, CalendarDays, CheckCircle2, CheckSquare, Loader2, LogOut, Menu, Plus, Repeat, Settings, Sun, Trophy, X } from "lucide-react";
 import { apiRequest } from "@/lib/api";
-import { api, Category, todayISO } from "@/lib/tasks";
+import { api, Category, Challenge, todayISO } from "@/lib/tasks";
 import { registerServiceWorker } from "@/lib/push";
 import { useLanguage } from "@/context/LanguageContext";
 import BrandMark from "@/components/BrandMark";
 import TaskFormModal, { TaskFormTarget } from "./TaskFormModal";
+import HabitFormModal, { HabitFormTarget } from "./HabitFormModal";
+import { ChallengeFormModal, ChallengeFormTarget, ChallengeResultModal } from "./ChallengeModals";
 import DayCloseModal from "./DayCloseModal";
 import SettingsModal from "./SettingsModal";
+import { Dash, DashContext } from "./DashContext";
+import { AddMenu } from "./ItemRows";
 import TodayView from "./views/TodayView";
 import WeekView from "./views/WeekView";
+import TasksView from "./views/TasksView";
+import HabitsView from "./views/HabitsView";
+import ChallengesView from "./views/ChallengesView";
 import AnalyticsView from "./views/AnalyticsView";
 import ProfileView from "./views/ProfileView";
 
 type User = { id?: string; full_name?: string; email?: string };
-type Tab = "today" | "week" | "analytics" | "profile";
+type Tab = "today" | "week" | "tasks" | "habits" | "challenges" | "analytics" | "profile";
 type NavItem = { id: Tab; label: string; icon: typeof Sun };
 
 // Mismo patrón que FyDry: grupos con título en el menú lateral
@@ -29,6 +36,15 @@ const NAV_GROUPS: { id: string; title: string; items: NavItem[] }[] = [
     items: [
       { id: "today", label: "Mi día", icon: Sun },
       { id: "week", label: "Semana", icon: CalendarDays },
+    ],
+  },
+  {
+    id: "manage",
+    title: "GESTIÓN",
+    items: [
+      { id: "tasks", label: "Tareas", icon: CheckSquare },
+      { id: "habits", label: "Hábitos", icon: Repeat },
+      { id: "challenges", label: "Retos", icon: Trophy },
     ],
   },
   {
@@ -105,6 +121,9 @@ export default function DashboardLayout() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [hideBottomBar, setHideBottomBar] = useState(false);
   const [formTarget, setFormTarget] = useState<TaskFormTarget | null>(null);
+  const [habitTarget, setHabitTarget] = useState<HabitFormTarget | null>(null);
+  const [challengeTarget, setChallengeTarget] = useState<ChallengeFormTarget | null>(null);
+  const [resultTarget, setResultTarget] = useState<Challenge | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
   const [toast, setToast] = useState<{ kind: "error" | "info"; msg: string } | null>(null);
@@ -196,6 +215,30 @@ export default function DashboardLayout() {
     router.push("/login");
   };
 
+  const dash: Dash = useMemo(
+    () => ({
+      categories,
+      catOf: (id) => categories.find((c) => c.id === id),
+      refreshKey,
+      bump,
+      onError,
+      onInfo,
+      actions: {
+        newTask: (date) => setFormTarget({ kind: "new", date }),
+        editTask: (task) => setFormTarget({ kind: "edit", task }),
+        newHabit: (mode, date) => setHabitTarget({ kind: "new", mode, date }),
+        editHabit: (habit) => setHabitTarget({ kind: "edit", habit }),
+        newChallenge: (date) => setChallengeTarget({ kind: "new", date }),
+        editChallenge: (challenge) => setChallengeTarget({ kind: "edit", challenge }),
+        reportChallenge: (c) => setResultTarget(c),
+        openClose: (date) => setCloseDate(date),
+        create: (kind, date) =>
+          kind === "task" ? setFormTarget({ kind: "new", date }) : kind === "habit" ? setHabitTarget({ kind: "new", mode: "building", date }) : setChallengeTarget({ kind: "new", date }),
+      },
+    }),
+    [categories, refreshKey, bump, onError, onInfo]
+  );
+
   if (isLoadingAuth) {
     return (
       <div className="min-h-screen bg-zinc-50 flex flex-col items-center justify-center p-4">
@@ -212,10 +255,9 @@ export default function DashboardLayout() {
 
   const initial = currentUser?.full_name?.charAt(0).toUpperCase() || "U";
   const shared = { refreshKey, onError };
-  const openForm = (target: TaskFormTarget) => setFormTarget(target);
-  const newTask = () => openForm({ kind: "new", date: todayISO() });
 
   return (
+    <DashContext.Provider value={dash}>
     <div className="min-h-screen bg-zinc-50/60 antialiased font-sans text-zinc-900">
       {/* Menú lateral de escritorio (fijo, como FyDry) */}
       <aside className="hidden md:flex flex-col w-64 min-w-[256px] max-w-[256px] border-r border-zinc-200/80 bg-white h-dvh p-4 fixed inset-y-0 left-0 z-30 justify-between overflow-hidden">
@@ -301,21 +343,17 @@ export default function DashboardLayout() {
       <div className="flex-1 min-w-0 flex flex-col md:pl-64">
         {/* Barra superior de escritorio: aquí va "Nueva tarea", como "Registrar" en FyDry */}
         <div className="hidden md:flex items-center justify-end px-6 lg:px-8 pt-6 pb-2">
-          <button
-            type="button"
-            onClick={newTask}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl border border-zinc-200/90 hover:border-zinc-300 bg-white hover:bg-zinc-50 text-zinc-800 font-semibold text-xs shadow-2xs transition-all active:scale-95 cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5 text-zinc-900" />
-            <span>Nueva tarea</span>
-          </button>
+          <NewButton onPick={(k) => dash.actions.create(k, todayISO())} />
         </div>
 
         <main className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 md:pt-2 lg:pt-2 pb-28 md:pb-10 w-full max-w-[1600px] mx-auto">
           <AnimatePresence mode="wait">
             <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.18 }}>
-              {tab === "today" && <TodayView categories={categories} openForm={openForm} openClose={setCloseDate} {...shared} />}
-              {tab === "week" && <WeekView categories={categories} openForm={openForm} onInfo={onInfo} {...shared} />}
+              {tab === "today" && <TodayView />}
+              {tab === "week" && <WeekView />}
+              {tab === "tasks" && <TasksView />}
+              {tab === "habits" && <HabitsView />}
+              {tab === "challenges" && <ChallengesView />}
               {tab === "analytics" && <AnalyticsView {...shared} />}
               {tab === "profile" && <ProfileView {...shared} />}
             </motion.div>
@@ -329,24 +367,26 @@ export default function DashboardLayout() {
         className={`md:hidden fixed bottom-0 inset-x-0 bg-white/90 backdrop-blur-md border-t border-zinc-200/80 z-30 pb-[env(safe-area-inset-bottom)] px-3 py-1.5 transition-transform duration-300 ${hideBottomBar ? "translate-y-full" : "translate-y-0"}`}
       >
         <div className="flex items-center justify-around max-w-md mx-auto">
-          {ALL_TABS.slice(0, 2).map((item) => (
+          {MOBILE_TABS.slice(0, 2).map((item) => (
             <MobileTab key={item.id} item={item} active={tab === item.id} onClick={() => goTo(item.id)} />
           ))}
-          <button
-            type="button"
-            onClick={newTask}
-            aria-label="Nueva tarea"
-            className="w-11 h-11 rounded-full bg-emerald-700 text-white flex items-center justify-center shadow-md -mt-4 active:scale-95 transition-transform hover:bg-emerald-800 cursor-pointer shrink-0"
-          >
-            <Plus className="w-5 h-5" />
-          </button>
-          {ALL_TABS.slice(2, 4).map((item) => (
+          <MobileNew onPick={(k) => dash.actions.create(k, todayISO())} />
+          {MOBILE_TABS.slice(2, 4).map((item) => (
             <MobileTab key={item.id} item={item} active={tab === item.id} onClick={() => goTo(item.id)} />
           ))}
         </div>
       </nav>
 
-      <TaskFormModal target={formTarget} categories={categories} onClose={() => setFormTarget(null)} onSaved={bump} />
+      <TaskFormModal
+        target={formTarget}
+        categories={categories}
+        onClose={() => setFormTarget(null)}
+        onSaved={bump}
+        onSwitchToHabit={(date) => { setFormTarget(null); setHabitTarget({ kind: "new", mode: "established", date }); }}
+      />
+      <HabitFormModal target={habitTarget} categories={categories} onClose={() => setHabitTarget(null)} onSaved={bump} />
+      <ChallengeFormModal target={challengeTarget} categories={categories} onClose={() => setChallengeTarget(null)} onSaved={bump} />
+      <ChallengeResultModal challenge={resultTarget} onClose={() => setResultTarget(null)} onSaved={() => { bump(); onInfo("Resultado guardado."); }} />
       <DayCloseModal date={closeDate} categories={categories} onClose={() => setCloseDate(null)} onSaved={() => { bump(); onInfo("Día cerrado. ¡Buen trabajo!"); }} />
       <SettingsModal
         open={isSettingsOpen}
@@ -355,7 +395,6 @@ export default function DashboardLayout() {
         onLogout={handleLogout}
         categories={categories}
         reloadCategories={() => { loadCategories(); bump(); }}
-        openForm={openForm}
         onInfo={onInfo}
         {...shared}
       />
@@ -376,6 +415,46 @@ export default function DashboardLayout() {
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+    </DashContext.Provider>
+  );
+}
+
+const MOBILE_TABS = ["today", "week", "habits", "challenges"].map((id) => ALL_TABS.find((t) => t.id === id)!);
+
+/** "+ Nueva" de la barra superior: elige tarea, hábito o reto. */
+function NewButton({ onPick }: { onPick: (k: "task" | "habit" | "challenge") => void }) {
+  return (
+    <div className="w-36">
+      <AddMenu label="Nueva" onPick={onPick} below
+        className="[&>button]:border [&>button]:border-zinc-200/90 [&>button]:bg-white [&>button]:text-zinc-800 [&>button]:text-xs [&>button]:py-2 [&>button]:rounded-2xl [&>button]:shadow-2xs" />
+    </div>
+  );
+}
+
+/** Botón central de la barra móvil: también deja elegir el tipo. */
+function MobileNew({ onPick }: { onPick: (k: "task" | "habit" | "challenge") => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative -mt-4 shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        aria-label="Nueva"
+        aria-expanded={open}
+        className="w-11 h-11 rounded-full bg-emerald-700 text-white flex items-center justify-center shadow-md active:scale-95 transition-transform hover:bg-emerald-800 cursor-pointer"
+      >
+        {open ? <X className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
+      </button>
+      {open && (
+        <div className="absolute bottom-14 left-1/2 -translate-x-1/2 w-40 p-1 rounded-2xl bg-white border border-zinc-200 shadow-xl text-xs">
+          {([["task", "Tarea", CheckSquare, "text-zinc-500"], ["habit", "Hábito", Repeat, "text-emerald-700"], ["challenge", "Reto", Trophy, "text-amber-600"]] as const).map(([k, label, Icon, cls]) => (
+            <button key={k} type="button" onClick={() => { setOpen(false); onPick(k); }} className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl hover:bg-zinc-100 cursor-pointer">
+              <Icon className={`w-4 h-4 ${cls}`} /> {label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

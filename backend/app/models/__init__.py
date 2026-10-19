@@ -8,6 +8,9 @@ from app.models.tasks import (
     TaskPushSubscription,
     TaskNotificationPrefs,
     TaskAiProfile,
+    Habit,
+    HabitLog,
+    Challenge,
 )
 
 __all__ = [
@@ -20,4 +23,7 @@ __all__ = [
     "TaskPushSubscription",
     "TaskNotificationPrefs",
     "TaskAiProfile",
+    "Habit",
+    "HabitLog",
+    "Challenge",
 ]

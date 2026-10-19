@@ -2,18 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Bell, BellOff, Loader2, LogOut, Plus, Repeat, Send, Smartphone, Tag, Trash2, User, X } from "lucide-react";
-import { TaskFormTarget } from "./TaskFormModal";
+import { Bell, BellOff, Loader2, LogOut, Plus, Send, Smartphone, Tag, Trash2, User, X } from "lucide-react";
 import { useLoad } from "./useLoad";
-import { api, Category, NotificationPrefs, WEEKDAY_SHORT } from "@/lib/tasks";
+import { api, Category, NotificationPrefs } from "@/lib/tasks";
 import { disablePush, enablePush, pushState, PushState } from "@/lib/push";
 
 const PALETTE = ["#6e2234", "#16a34a", "#2563eb", "#d97706", "#7c3aed", "#0891b2", "#db2777", "#52525b"];
 
-type SettingsTab = "categories" | "recurrences" | "notifications" | "account";
+type SettingsTab = "categories" | "notifications" | "account";
 const TABS: { id: SettingsTab; label: string; icon: typeof Tag }[] = [
   { id: "categories", label: "Categorías", icon: Tag },
-  { id: "recurrences", label: "Tareas recurrentes", icon: Repeat },
   { id: "notifications", label: "Notificaciones", icon: Bell },
   { id: "account", label: "Cuenta", icon: User },
 ];
@@ -51,7 +49,6 @@ export default function SettingsModal({
   refreshKey,
   onError,
   onInfo,
-  openForm,
 }: {
   open: boolean;
   onClose: () => void;
@@ -62,10 +59,8 @@ export default function SettingsModal({
   refreshKey: number;
   onError: (m: string) => void;
   onInfo: (m: string) => void;
-  openForm: (t: TaskFormTarget) => void;
 }) {
   const [tab, setTab] = useState<SettingsTab>("categories");
-  const recs = useLoad(() => api.recurrences(), [], refreshKey, onError);
   const prefsLoad = useLoad(() => api.prefs(), [], refreshKey, onError);
   const [prefs, setPrefs] = useState<NotificationPrefs | null>(null);
   const [newCat, setNewCat] = useState("");
@@ -73,7 +68,6 @@ export default function SettingsModal({
   const [push, setPush] = useState<PushState | "loading">("loading");
   const [pushBusy, setPushBusy] = useState(false);
   const shownPrefs = prefs ?? prefsLoad.data;
-  const catOf = (id: string | null) => categories.find((c) => c.id === id);
 
   useEffect(() => {
     if (!open) return;
@@ -207,39 +201,6 @@ export default function SettingsModal({
           <input value={newCat} onChange={(e) => setNewCat(e.target.value)} maxLength={60} placeholder="Nueva categoría" aria-label="Nueva categoría" className={`${input} flex-1 min-w-0`} />
           <button type="submit" className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-emerald-700 text-white text-xs font-semibold cursor-pointer"><Plus className="w-3.5 h-3.5" /> Agregar</button>
         </form>
-      </Section>
-      )}
-
-      {tab === "recurrences" && (
-      <Section
-        hint="Se generan solas en tu semana."
-        action={<button type="button" onClick={() => openForm({ kind: "new-recurrence" })} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-700 text-white text-[11px] font-semibold cursor-pointer"><Plus className="w-3.5 h-3.5" /> Nueva</button>}
-      >
-        {recs.loading ? (
-          <Loader2 className="w-4 h-4 animate-spin text-zinc-400" />
-        ) : (recs.data ?? []).length === 0 ? (
-          <p className="text-xs text-zinc-400">Crea tareas que se repiten, como &quot;Gimnasio lunes, miércoles y viernes&quot;. Aparecen solas en tu semana.</p>
-        ) : (
-          <ul className="space-y-2">
-            {(recs.data ?? []).map((r) => (
-              <li key={r.id} className="flex items-center gap-2 p-2.5 rounded-2xl border border-zinc-200/80">
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: catOf(r.category_id)?.color ?? "#d4d4d8" }} aria-hidden="true" />
-                <button type="button" onClick={() => openForm({ kind: "edit-recurrence", rec: r })} className="flex-1 min-w-0 text-left cursor-pointer">
-                  <div className="text-sm font-medium text-zinc-900 truncate">{r.title}</div>
-                  <div className="text-[11px] text-zinc-400">{r.weekdays.map((d) => WEEKDAY_SHORT[d]).join(", ")}{r.time ? ` · ${r.time}` : ""}</div>
-                </button>
-                <button
-                  type="button"
-                  aria-label={`Detener ${r.title}`}
-                  onClick={() => window.confirm(`¿Dejar de repetir "${r.title}"? Se borran las próximas pendientes; el historial se conserva.`) && guard(async () => { await api.deleteRecurrence(r.id); recs.reload(); }, "Recurrencia detenida.")}
-                  className="p-2 rounded-xl text-zinc-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
       </Section>
       )}
 

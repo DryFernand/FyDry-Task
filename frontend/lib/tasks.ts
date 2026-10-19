@@ -35,16 +35,86 @@ export interface TaskInput {
   time?: string | null;
 }
 
-export interface Recurrence {
+export type HabitKind = "building" | "established";
+export type HabitLogStatus = "done" | "not_done";
+
+export interface HabitStats {
+  streak: number;
+  end_date: string | null;
+  // en construcción
+  expected_total?: number;
+  expected_so_far?: number;
+  done?: number;
+  rate_so_far?: number | null;
+  needed?: number;
+  days_left?: number;
+  on_track?: boolean;
+  // ya establecido
+  done_30d?: number;
+  expected_30d?: number;
+  rate_30d?: number | null;
+}
+
+export interface Habit {
   id: string;
   title: string;
   category_id: string | null;
-  priority: Priority;
   time: string | null;
   weekdays: number[];
+  kind: HabitKind;
+  status: "active" | "needs_adjust" | "archived";
   start_date: string;
-  end_date: string | null;
-  is_active: boolean;
+  period_days: number | null;
+  target_rate: number;
+  consolidated_on: string | null;
+  evaluated_on: string | null;
+  last_rate: number | null;
+  adjustments: number;
+  stats: HabitStats | null;
+}
+
+export interface HabitInput {
+  title: string;
+  category_id?: string | null;
+  time?: string | null;
+  weekdays: number[];
+  kind: HabitKind;
+  start_date: string;
+  period_days?: number | null;
+  target_rate?: number;
+}
+
+export interface HabitEntry {
+  habit_id: string;
+  date: string;
+  status: HabitLogStatus | null;
+}
+
+export type ChallengeStatus = "pending" | "achieved" | "partial" | "failed";
+
+export interface Challenge {
+  id: string;
+  title: string;
+  category_id: string | null;
+  date: string;
+  time: string | null;
+  status: ChallengeStatus;
+  result_note: string | null;
+  status_at: string | null;
+}
+
+export interface ChallengeInput {
+  title: string;
+  category_id?: string | null;
+  date: string;
+  time?: string | null;
+}
+
+export interface Agenda {
+  tasks: Task[];
+  habits: Habit[];
+  habit_entries: HabitEntry[];
+  challenges: Challenge[];
 }
 
 export interface Review {
@@ -58,7 +128,7 @@ export interface RateRow {
   rate: number | null;
 }
 
-export interface Analytics {
+export interface TaskAnalytics {
   start: string;
   end: string;
   counts: Record<"done" | "partial" | "not_done" | "postponed", number>;
@@ -80,6 +150,44 @@ export interface Analytics {
   top_partial: { title: string; count: number }[];
   reviews: number;
   insights: string[];
+}
+
+export interface HabitAnalytics {
+  expected: number;
+  done: number;
+  rate: number | null;
+  habits: { habit_id: string; title: string; kind: HabitKind; status: string; category: string | null; expected: number; done: number; rate: number; streak: number; consolidated_on: string | null }[];
+  by_weekday: (RateRow & { weekday: number; name: string })[];
+  building: number;
+  needs_adjust: number;
+  established: number;
+  consolidated_in_period: number;
+  best_streak: number;
+  first_day: string | null;
+  active_days: number;
+  insights: string[];
+}
+
+export interface ChallengeAnalytics {
+  counts: Record<"achieved" | "partial" | "failed", number>;
+  decided: number;
+  pending_past: number;
+  rate: number | null;
+  by_category: (RateRow & { category_id: string | null; name: string; color: string })[];
+  recent: { title: string; date: string; status: ChallengeStatus }[];
+  first_day: string | null;
+  active_days: number;
+  insights: string[];
+}
+
+export interface Analytics {
+  start: string;
+  end: string;
+  overview: { tasks_rate: number | null; habits_rate: number | null; challenges_rate: number | null; active_days: number; first_day: string | null };
+  insights: string[];
+  tasks: TaskAnalytics;
+  habits: HabitAnalytics;
+  challenges: ChallengeAnalytics;
 }
 
 export interface AiProfile {
@@ -115,6 +223,12 @@ export const STATUS_META: Record<Exclude<TaskStatus, "pending">, { label: string
   partial: { label: "A medias", color: "#f59e0b", soft: "bg-amber-50 text-amber-700 border-amber-200" },
   not_done: { label: "No hecho", color: "#e11d48", soft: "bg-rose-50 text-rose-700 border-rose-200" },
   postponed: { label: "Pospuesta", color: "#0284c7", soft: "bg-sky-50 text-sky-700 border-sky-200" },
+};
+
+export const CHALLENGE_META: Record<Exclude<ChallengeStatus, "pending">, { label: string; color: string; soft: string; emoji: string }> = {
+  achieved: { label: "Logrado", color: "#16a34a", soft: "bg-green-50 text-green-700 border-green-200", emoji: "🏆" },
+  partial: { label: "Parcial", color: "#f59e0b", soft: "bg-amber-50 text-amber-700 border-amber-200", emoji: "🟡" },
+  failed: { label: "No logrado", color: "#e11d48", soft: "bg-rose-50 text-rose-700 border-rose-200", emoji: "❌" },
 };
 
 export const PRIORITY_META: Record<Priority, { label: string; className: string }> = {
@@ -204,10 +318,21 @@ export const api = {
   deleteTask: (id: string) => send<null>(`/tasks/${id}`, "DELETE"),
   copyWeek: (from_start: string, to_start: string) => send<Task[]>("/tasks/copy-week", "POST", { from_start, to_start }),
 
-  recurrences: () => send<Recurrence[]>("/recurrences"),
-  createRecurrence: (data: Omit<Recurrence, "id" | "is_active" | "end_date"> & { end_date?: string | null }) => send<Recurrence>("/recurrences", "POST", data),
-  updateRecurrence: (id: string, data: Partial<Omit<Recurrence, "id" | "is_active">>) => send<Recurrence>(`/recurrences/${id}${qs({ today: todayISO() })}`, "PATCH", data),
-  deleteRecurrence: (id: string) => send<null>(`/recurrences/${id}${qs({ today: todayISO() })}`, "DELETE"),
+  agenda: (start: string, end: string) => send<Agenda>(`/agenda${qs({ start, end, today: todayISO() })}`),
+
+  habits: (includeArchived = false) => send<Habit[]>(`/habits${qs({ today: todayISO(), include_archived: String(includeArchived) })}`),
+  createHabit: (data: HabitInput) => send<Habit>("/habits", "POST", data),
+  updateHabit: (id: string, data: Partial<Omit<HabitInput, "kind" | "start_date" | "period_days">> & { status?: "active" | "archived" }) => send<Habit>(`/habits/${id}`, "PATCH", data),
+  deleteHabit: (id: string) => send<null>(`/habits/${id}`, "DELETE"),
+  logHabit: (id: string, date: string, status: HabitLogStatus | null) => send<HabitEntry>(`/habits/${id}/log`, "PUT", { date, status }),
+  extendHabit: (id: string, days: number) => send<Habit>(`/habits/${id}/extend`, "POST", { days }),
+  restartHabit: (id: string, start_date: string, period_days: number) => send<Habit>(`/habits/${id}/restart`, "POST", { start_date, period_days }),
+
+  challenges: (start: string, end: string) => send<Challenge[]>(`/challenges${qs({ start, end })}`),
+  createChallenge: (data: ChallengeInput) => send<Challenge>("/challenges", "POST", data),
+  updateChallenge: (id: string, data: Partial<ChallengeInput>) => send<Challenge>(`/challenges/${id}`, "PATCH", data),
+  challengeResult: (id: string, status: ChallengeStatus, note: string | null) => send<Challenge>(`/challenges/${id}/result`, "POST", { status, note }),
+  deleteChallenge: (id: string) => send<null>(`/challenges/${id}`, "DELETE"),
 
   reviews: (start: string, end: string) => send<Review[]>(`/reviews${qs({ start, end })}`),
   saveReview: (date: string, energy: number | null, note: string | null) => send<Review>(`/reviews/${date}`, "PUT", { energy, note }),

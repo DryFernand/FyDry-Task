@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { BarChart3, Flame, Lightbulb, ListChecks, Loader2, Repeat2, Target } from "lucide-react";
+import { BarChart3, Flame, Lightbulb, ListChecks, Loader2, Repeat, Repeat2, Target, Trophy } from "lucide-react";
+import { KindIcon } from "../ItemRows";
 import { useLoad } from "../useLoad";
-import { addDays, Analytics, api, formatDay, STATUS_META, todayISO, weekStart } from "@/lib/tasks";
+import { addDays, Analytics, api, CHALLENGE_META, ChallengeAnalytics, formatDay, HabitAnalytics, STATUS_META, todayISO, weekStart } from "@/lib/tasks";
 
 const BRAND = "#6e2234";
 const SLOT_LABEL = { manana: "Mañana (antes de 12)", tarde: "Tarde (12–18)", noche: "Noche (desde 18)", sin_hora: "Sin hora" } as const;
@@ -65,7 +66,9 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
 export default function AnalyticsView({ refreshKey, onError }: { refreshKey: number; onError: (m: string) => void }) {
   const [range, setRange] = useState<RangeKey>("4_weeks");
   const [start, end] = rangeOf(range);
-  const { data: m, loading } = useLoad<Analytics>(() => api.analytics(start, end), [start, end], refreshKey, onError);
+  const { data: all, loading } = useLoad<Analytics>(() => api.analytics(start, end), [start, end], refreshKey, onError);
+  const [tab, setTab] = useState<"tasks" | "habits" | "challenges">("tasks");
+  const m = all?.tasks;
 
   return (
     <div className="space-y-5">
@@ -76,7 +79,7 @@ export default function AnalyticsView({ refreshKey, onError }: { refreshKey: num
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-zinc-950">Tu actividad</h1>
           <p className="text-xs text-zinc-500 mt-0.5">
-            {formatDay(start, { day: "numeric", month: "short" })} – {formatDay(end, { day: "numeric", month: "short" })} · Hecho = 100%, A medias = 50%
+            {formatDay(start, { day: "numeric", month: "short" })} – {formatDay(end, { day: "numeric", month: "short" })}
           </p>
         </div>
         <div className="flex flex-wrap gap-1 p-1 rounded-2xl bg-zinc-100" role="radiogroup" aria-label="Periodo">
@@ -88,10 +91,40 @@ export default function AnalyticsView({ refreshKey, onError }: { refreshKey: num
         </div>
       </div>
 
-      {loading || !m ? (
+      {loading || !all || !m ? (
         <div className="py-16 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-zinc-400" /></div>
       ) : (
         <>
+          {/* Resumen general de las 3 secciones */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <Stat label="Tareas" value={pct(all.overview.tasks_rate)} sub={`${m.evaluated} marcadas · Hecho 100%, A medias 50%`} />
+            <Stat label="Hábitos" value={pct(all.overview.habits_rate)} sub={`${all.habits.done} de ${all.habits.expected} veces`} />
+            <Stat label="Retos" value={pct(all.overview.challenges_rate)} sub={`${all.challenges.counts.achieved} logrados de ${all.challenges.decided}`} />
+          </div>
+          <Card title="Resumen general" icon={Lightbulb}>
+            <ul className="space-y-2">
+              {all.insights.map((s) => (
+                <li key={s} className="flex gap-2 text-sm text-zinc-700 leading-relaxed">
+                  <span className="mt-2 w-1.5 h-1.5 rounded-full bg-emerald-700 shrink-0" aria-hidden="true" />
+                  <span>{s}</span>
+                </li>
+              ))}
+            </ul>
+          </Card>
+
+          <div className="flex flex-wrap gap-1 p-1 rounded-2xl bg-zinc-100 w-fit" role="tablist" aria-label="Sección">
+            {([["tasks", "Tareas"], ["habits", "Hábitos"], ["challenges", "Retos"]] as const).map(([k, label]) => (
+              <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
+                className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold cursor-pointer ${tab === k ? "bg-white shadow-xs text-zinc-950" : "text-zinc-500"}`}>
+                <KindIcon kind={k === "tasks" ? "task" : k === "habits" ? "habit" : "challenge"} /> {label}
+              </button>
+            ))}
+          </div>
+
+          {tab === "habits" && <HabitsSection h={all.habits} />}
+          {tab === "challenges" && <ChallengesSection c={all.challenges} />}
+          {tab === "tasks" && (
+          <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <Stat label="Cumplimiento" value={pct(m.completion_rate)} sub={`${m.evaluated} tareas marcadas`} />
             <Stat label="Planificado vs hecho" value={`${m.avg_done_per_day} / ${m.avg_planned_per_day}`} sub="promedio por día activo" />
@@ -99,7 +132,7 @@ export default function AnalyticsView({ refreshKey, onError }: { refreshKey: num
             <Stat label="Días activos" value={String(m.active_days)} sub={m.unreviewed ? `${m.unreviewed} sin marcar` : "todo marcado"} />
           </div>
 
-          <Card title="Resumen" icon={Lightbulb}>
+          <Card title="Resumen de tareas" icon={Lightbulb}>
             <ul className="space-y-2">
               {m.insights.map((s) => (
                 <li key={s} className="flex gap-2 text-sm text-zinc-700 leading-relaxed">
@@ -172,8 +205,85 @@ export default function AnalyticsView({ refreshKey, onError }: { refreshKey: num
               </div>
             </>
           )}
+          </>
+          )}
         </>
       )}
     </div>
+  );
+}
+
+function Insights({ items }: { items: string[] }) {
+  return (
+    <Card title="Resumen" icon={Lightbulb}>
+      <ul className="space-y-2">
+        {items.map((s) => (
+          <li key={s} className="flex gap-2 text-sm text-zinc-700 leading-relaxed">
+            <span className="mt-2 w-1.5 h-1.5 rounded-full bg-emerald-700 shrink-0" aria-hidden="true" />
+            <span>{s}</span>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
+function HabitsSection({ h }: { h: HabitAnalytics }) {
+  return (
+    <>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Stat label="Cumplimiento" value={pct(h.rate)} sub={`${h.done} de ${h.expected} veces`} />
+        <Stat label="En construcción" value={String(h.building)} sub={h.needs_adjust ? `${h.needs_adjust} por reajustar` : "ninguno por reajustar"} />
+        <Stat label="Consolidados" value={String(h.consolidated_in_period)} sub="en este periodo" />
+        <Stat label="Mejor racha" value={String(h.best_streak)} sub="veces seguidas" />
+      </div>
+      <Insights items={h.insights} />
+      {h.expected > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <Card title="Por hábito" icon={Repeat}>
+            {h.habits.map((r) => (
+              <BarRow key={r.habit_id} label={`${r.kind === "building" ? "🔨 " : ""}${r.title}`} rate={r.rate} count={r.expected} unit="veces" />
+            ))}
+            <p className="mt-2 text-[11px] text-zinc-400">🔨 = en construcción</p>
+          </Card>
+          <Card title="Por día de la semana" icon={BarChart3}>
+            {h.by_weekday.map((r) => <BarRow key={r.weekday} label={r.name.charAt(0).toUpperCase() + r.name.slice(1)} rate={r.rate} count={r.count} unit="veces" />)}
+          </Card>
+        </div>
+      )}
+    </>
+  );
+}
+
+function ChallengesSection({ c }: { c: ChallengeAnalytics }) {
+  const keys = Object.keys(CHALLENGE_META) as (keyof typeof CHALLENGE_META)[];
+  return (
+    <>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Stat label="Cumplimiento" value={pct(c.rate)} sub="Logrado 100%, Parcial 50%" />
+        {keys.map((k) => <Stat key={k} label={`${CHALLENGE_META[k].emoji} ${CHALLENGE_META[k].label}`} value={String(c.counts[k])} sub={c.decided ? `${Math.round((c.counts[k] / c.decided) * 100)}% de los retos` : "—"} />)}
+      </div>
+      <Insights items={c.insights} />
+      {c.decided > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <Card title="Resultados" icon={Trophy}>
+            <div className="flex h-3 w-full gap-[2px] rounded-full overflow-hidden bg-zinc-100" role="img" aria-label="Resultados de retos">
+              {keys.map((k) => (c.counts[k] ? <div key={k} title={`${CHALLENGE_META[k].label}: ${c.counts[k]}`} style={{ width: `${(c.counts[k] / c.decided) * 100}%`, background: CHALLENGE_META[k].color }} /> : null))}
+            </div>
+            <ul className="mt-3 space-y-1.5 text-xs">
+              {c.recent.map((r) => (
+                <li key={`${r.date}-${r.title}`} className="flex items-center justify-between gap-2">
+                  <span className="truncate text-zinc-700">{r.title}</span>
+                  <span className="shrink-0 text-zinc-400">{formatDay(r.date, { day: "numeric", month: "short" })} · {CHALLENGE_META[r.status as keyof typeof CHALLENGE_META].emoji}</span>
+                </li>
+              ))}
+            </ul>
+          </Card>
+          <Card title="Por categoría" icon={Target}>
+            {c.by_category.map((r) => <BarRow key={r.category_id ?? "none"} label={r.name} rate={r.rate} count={r.count} color={r.color} unit="retos" />)}
+          </Card>
+        </div>
+      )}
+    </>
   );
 }

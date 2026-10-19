@@ -5,6 +5,17 @@ import { BrainCircuit, CheckCircle2, Info, Loader2, RefreshCw, Sparkles, Star } 
 import { useLoad } from "../useLoad";
 import { AiProfile, api, formatDay } from "@/lib/tasks";
 
+const p100 = (r: number | null | undefined) => (r == null ? "—" : `${Math.round(r * 100)}%`);
+
+/** Línea de contexto del perfil. Los perfiles anteriores solo tenían métricas de tareas. */
+function periodSummary(m: AiProfile["metrics"]): string {
+  if (!m.overview) {
+    const old = m as unknown as { evaluated?: number; completion_rate?: number | null };
+    return `${old.evaluated ?? 0} tareas · ${p100(old.completion_rate)} de cumplimiento`;
+  }
+  return `Tareas ${p100(m.overview.tasks_rate)} · Hábitos ${p100(m.overview.habits_rate)} · Retos ${p100(m.overview.challenges_rate)}`;
+}
+
 export default function ProfileView({ refreshKey, onError }: { refreshKey: number; onError: (m: string) => void }) {
   const { data, loading, reload } = useLoad<AiProfile | null>(() => api.profile(), [], refreshKey, onError);
   const [generating, setGenerating] = useState(false);
@@ -33,7 +44,7 @@ export default function ProfileView({ refreshKey, onError }: { refreshKey: numbe
             <BrainCircuit className="w-3.5 h-3.5" aria-hidden="true" /> Perfil con IA
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-zinc-950">¿Qué tipo de persona eres?</h1>
-          <p className="text-xs text-zinc-500 mt-0.5">Analiza tus últimas 4 semanas. Se recomienda actualizarlo cada semana.</p>
+          <p className="text-xs text-zinc-500 mt-0.5">Analiza tus tareas, hábitos y retos de las últimas 4 semanas. Se recomienda actualizarlo cada semana.</p>
         </div>
         <button type="button" onClick={generate} disabled={generating} className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold cursor-pointer disabled:opacity-60">
           {generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : p ? <RefreshCw className="w-3.5 h-3.5" /> : <Sparkles className="w-3.5 h-3.5" />}
@@ -54,7 +65,7 @@ export default function ProfileView({ refreshKey, onError }: { refreshKey: numbe
           <BrainCircuit className="w-9 h-9 mx-auto text-emerald-700" aria-hidden="true" />
           <h2 className="mt-3 text-base font-bold text-zinc-900">Aún no tienes perfil</h2>
           <p className="mt-1 text-sm text-zinc-500 max-w-md mx-auto">
-            Cuando lleves al menos 2 semanas marcando tu checklist, la IA revisará tus métricas y te dirá qué tipo de planificador eres y por qué.
+            Cuando lleves al menos 2 semanas marcando tus tareas, hábitos y retos, la IA revisará tus métricas y te dirá qué tipo de persona eres y por qué.
           </p>
         </div>
       ) : (
@@ -68,7 +79,7 @@ export default function ProfileView({ refreshKey, onError }: { refreshKey: numbe
               <p className="mt-3 text-sm sm:text-base text-emerald-50 leading-relaxed max-w-3xl">{p.summary}</p>
               <p className="mt-4 text-[11px] text-emerald-200">
                 Basado en {formatDay(data!.period_start, { day: "numeric", month: "short" })} – {formatDay(data!.period_end, { day: "numeric", month: "short" })} ·{" "}
-                {data!.metrics.evaluated} tareas · {Math.round((data!.metrics.completion_rate ?? 0) * 100)}% de cumplimiento
+                {periodSummary(data!.metrics)}
               </p>
             </div>
           </section>

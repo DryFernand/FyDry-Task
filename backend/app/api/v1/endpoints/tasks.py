@@ -6,23 +6,19 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, get_current_user
 from app.core.database import get_db
-from app.models import TaskCategory, TaskDayReview, TaskItem, TaskRecurrence
+from app.models import Challenge, Habit, TaskCategory, TaskDayReview, TaskItem
 from app.schemas.tasks import (
     CategoryIn,
     CategoryOut,
     CategoryUpdate,
     CopyWeekIn,
     PostponeIn,
-    RecurrenceIn,
-    RecurrenceOut,
-    RecurrenceUpdate,
     ReviewIn,
     ReviewOut,
     TaskIn,
     TaskOut,
     TaskUpdate,
 )
-from app.services.recurrence import materialize, weekdays_of
 
 router = APIRouter()
 MAX_RANGE_DAYS = 120
@@ -91,7 +87,7 @@ def update_category(cat_id: str, payload: CategoryUpdate, user: CurrentUser = De
 def delete_category(cat_id: str, user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
     cat = _owned(db, TaskCategory, cat_id, user.id)
     # Las tareas quedan "Sin categoría" (SQLite no aplica ON DELETE SET NULL sin PRAGMA)
-    for model in (TaskItem, TaskRecurrence):
+    for model in (TaskItem, Habit, Challenge):
         db.query(model).filter(model.user_id == user.id, model.category_id == cat.id).update({"category_id": None})
     db.delete(cat)
     db.commit()
@@ -107,7 +103,6 @@ def list_tasks(
     db: Session = Depends(get_db),
 ):
     _check_range(start, end)
-    materialize(db, user.id, start, end)
     return (
         db.query(TaskItem)
         .filter(TaskItem.user_id == user.id, TaskItem.is_deleted.is_(False))
@@ -147,16 +142,6 @@ def update_task(task_id: str, payload: TaskUpdate, user: CurrentUser = Depends(g
         raise HTTPException(status_code=409, detail="Esta tarea ya fue pospuesta; edita la copia en su nuevo día.")
     if "category_id" in data:
         _check_category(db, data["category_id"], user.id)
-    if "date" in data and item.recurrence_id and data["date"] != item.date:
-        # Al moverla de día deja de ser la instancia de la recurrencia; un marcador borrado
-        # ocupa su lugar original para que no se regenere.
-        rec_id = item.recurrence_id
-        item.recurrence_id = None
-        db.flush()
-        db.add(TaskItem(
-            user_id=user.id, title=item.title, category_id=item.category_id, priority=item.priority,
-            date=item.date, time=item.time, recurrence_id=rec_id, is_deleted=True,
-        ))
     for k, v in data.items():
         if k == "title" and v is not None:
             v = v.strip()
@@ -195,11 +180,8 @@ def postpone_task(task_id: str, payload: PostponeIn, user: CurrentUser = Depends
 @router.delete("/tasks/{task_id}", status_code=204)
 def delete_task(task_id: str, user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
     item = _owned(db, TaskItem, task_id, user.id)
-    if item.recurrence_id:
-        item.is_deleted = True
-    else:
-        db.query(TaskItem).filter(TaskItem.postponed_from_id == item.id).update({"postponed_from_id": None})
-        db.delete(item)
+    db.query(TaskItem).filter(TaskItem.postponed_from_id == item.id).update({"postponed_from_id": None})
+    db.delete(item)
     db.commit()
     return Response(status_code=204)
 
@@ -226,82 +208,6 @@ def copy_week(payload: CopyWeekIn, user: CurrentUser = Depends(get_current_user)
     for c in created:
         db.refresh(c)
     return created
-
-
-# ============ Recurrencias ============
-@router.get("/recurrences", response_model=List[RecurrenceOut])
-def list_recurrences(user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
-    return (
-        db.query(TaskRecurrence)
-        .filter(TaskRecurrence.user_id == user.id, TaskRecurrence.is_active.is_(True))
-        .order_by(TaskRecurrence.created_at)
-        .all()
-    )
-
-
-@router.post("/recurrences", response_model=RecurrenceOut, status_code=201)
-def create_recurrence(payload: RecurrenceIn, user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
-    _check_category(db, payload.category_id, user.id)
-    data = payload.model_dump()
-    data["weekdays"] = ",".join(str(d) for d in data["weekdays"])
-    data["title"] = data["title"].strip()
-    rec = TaskRecurrence(user_id=user.id, **data)
-    db.add(rec)
-    db.commit()
-    db.refresh(rec)
-    return rec
-
-
-def _future_pending(db: Session, rec: TaskRecurrence, today: date):
-    return (
-        db.query(TaskItem)
-        .filter(TaskItem.recurrence_id == rec.id, TaskItem.is_deleted.is_(False))
-        .filter(TaskItem.status == "pending", TaskItem.date >= today)
-    )
-
-
-@router.patch("/recurrences/{rec_id}", response_model=RecurrenceOut, summary="Edita la regla y sus próximas tareas pendientes")
-def update_recurrence(
-    rec_id: str,
-    payload: RecurrenceUpdate,
-    today: date = Query(..., description="Fecha local del usuario"),
-    user: CurrentUser = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    rec = _owned(db, TaskRecurrence, rec_id, user.id)
-    data = payload.model_dump(exclude_unset=True)
-    if "category_id" in data:
-        _check_category(db, data["category_id"], user.id)
-    if data.get("weekdays") is not None:
-        data["weekdays"] = ",".join(str(d) for d in data["weekdays"])
-    for k, v in data.items():
-        if k in ("title", "priority", "weekdays") and v is None:
-            continue
-        setattr(rec, k, v.strip() if k == "title" else v)
-    days = weekdays_of(rec)
-    for it in _future_pending(db, rec, today).all():
-        if it.date.weekday() not in days or (rec.end_date and it.date > rec.end_date):
-            it.is_deleted = True
-        else:
-            it.title, it.category_id, it.priority, it.time = rec.title, rec.category_id, rec.priority, rec.time
-    db.commit()
-    db.refresh(rec)
-    return rec
-
-
-@router.delete("/recurrences/{rec_id}", status_code=204, summary="Detiene la recurrencia; conserva el historial")
-def delete_recurrence(
-    rec_id: str,
-    today: date = Query(...),
-    user: CurrentUser = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    rec = _owned(db, TaskRecurrence, rec_id, user.id)
-    rec.is_active = False
-    rec.end_date = today - timedelta(days=1)
-    _future_pending(db, rec, today).update({"is_deleted": True}, synchronize_session=False)
-    db.commit()
-    return Response(status_code=204)
 
 
 # ============ Cierre del día ============
