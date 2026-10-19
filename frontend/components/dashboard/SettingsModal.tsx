@@ -1,21 +1,33 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Bell, BellOff, Loader2, Plus, Repeat, Send, Settings, Smartphone, Tag, Trash2 } from "lucide-react";
-import { TaskFormTarget } from "../TaskFormModal";
-import { useLoad } from "../useLoad";
+import { motion, AnimatePresence } from "motion/react";
+import { Bell, BellOff, Loader2, LogOut, Plus, Repeat, Send, Smartphone, Tag, Trash2, User, X } from "lucide-react";
+import { TaskFormTarget } from "./TaskFormModal";
+import { useLoad } from "./useLoad";
 import { api, Category, NotificationPrefs, WEEKDAY_SHORT } from "@/lib/tasks";
 import { disablePush, enablePush, pushState, PushState } from "@/lib/push";
 
 const PALETTE = ["#6e2234", "#16a34a", "#2563eb", "#d97706", "#7c3aed", "#0891b2", "#db2777", "#52525b"];
 
-function Section({ title, icon: Icon, children, action }: { title: string; icon: typeof Tag; children: React.ReactNode; action?: React.ReactNode }) {
+type SettingsTab = "categories" | "recurrences" | "notifications" | "account";
+const TABS: { id: SettingsTab; label: string; icon: typeof Tag }[] = [
+  { id: "categories", label: "Categorías", icon: Tag },
+  { id: "recurrences", label: "Tareas recurrentes", icon: Repeat },
+  { id: "notifications", label: "Notificaciones", icon: Bell },
+  { id: "account", label: "Cuenta", icon: User },
+];
+
+/** Contenido de una pestaña: el modal ya pone el marco y el título. */
+function Section({ children, action, hint }: { children: React.ReactNode; action?: React.ReactNode; hint?: string }) {
   return (
-    <section className="p-4 sm:p-5 rounded-3xl bg-white border border-zinc-200/80">
-      <div className="flex items-center justify-between gap-3 mb-3">
-        <h2 className="flex items-center gap-1.5 text-sm font-bold text-zinc-900"><Icon className="w-4 h-4 text-zinc-400" aria-hidden="true" /> {title}</h2>
-        {action}
-      </div>
+    <section>
+      {(hint || action) && (
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <p className="text-xs text-zinc-500">{hint}</p>
+          {action}
+        </div>
+      )}
       {children}
     </section>
   );
@@ -29,7 +41,11 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: 
   );
 }
 
-export default function SettingsView({
+export default function SettingsModal({
+  open,
+  onClose,
+  user,
+  onLogout,
   categories,
   reloadCategories,
   refreshKey,
@@ -37,6 +53,10 @@ export default function SettingsView({
   onInfo,
   openForm,
 }: {
+  open: boolean;
+  onClose: () => void;
+  user: { full_name?: string; email?: string } | null;
+  onLogout: () => void;
   categories: Category[];
   reloadCategories: () => void;
   refreshKey: number;
@@ -44,6 +64,7 @@ export default function SettingsView({
   onInfo: (m: string) => void;
   openForm: (t: TaskFormTarget) => void;
 }) {
+  const [tab, setTab] = useState<SettingsTab>("categories");
   const recs = useLoad(() => api.recurrences(), [], refreshKey, onError);
   const prefsLoad = useLoad(() => api.prefs(), [], refreshKey, onError);
   const [prefs, setPrefs] = useState<NotificationPrefs | null>(null);
@@ -53,6 +74,13 @@ export default function SettingsView({
   const [pushBusy, setPushBusy] = useState(false);
   const shownPrefs = prefs ?? prefsLoad.data;
   const catOf = (id: string | null) => categories.find((c) => c.id === id);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
 
   useEffect(() => {
     pushState().then(setPush).catch(() => setPush("unsupported"));
@@ -83,16 +111,68 @@ export default function SettingsView({
 
   const input = "px-3 py-2 rounded-xl border border-zinc-200 bg-white text-sm outline-none focus:border-zinc-900";
 
-  return (
-    <div className="space-y-5 max-w-3xl">
-      <div>
-        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700 uppercase tracking-wider">
-          <Settings className="w-3.5 h-3.5" aria-hidden="true" /> Configuración
-        </div>
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-zinc-950">Tu espacio</h1>
-      </div>
+  const current = TABS.find((t) => t.id === tab)!;
 
-      <Section title="Categorías" icon={Tag}>
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+        >
+          <motion.div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Configuración"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="w-full max-w-3xl bg-white rounded-3xl border border-zinc-200 shadow-2xl overflow-hidden flex flex-col md:flex-row h-[90dvh] md:h-[min(640px,90vh)]"
+          >
+            {/* Pestañas como en FyDry: a la izquierda en escritorio, arriba con scroll en el teléfono */}
+            <div className="w-full md:w-60 bg-zinc-50 border-b md:border-b-0 md:border-r border-zinc-200/80 p-2.5 md:p-4 shrink-0 flex flex-col justify-between">
+              <div className="space-y-0 md:space-y-4">
+                <div className="hidden md:flex items-center gap-2 px-2 pt-1">
+                  <span className="font-bold text-sm text-zinc-950">Configuración</span>
+                </div>
+                <nav className="overflow-x-auto scrollbar-none flex flex-row md:flex-col gap-1.5 pb-1 md:pb-0" aria-label="Secciones de configuración">
+                  {TABS.map((t) => {
+                    const Icon = t.icon;
+                    const active = tab === t.id;
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        aria-current={active ? "page" : undefined}
+                        onClick={() => setTab(t.id)}
+                        className={`w-auto md:w-full shrink-0 md:shrink whitespace-nowrap md:whitespace-normal flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                          active ? "bg-emerald-700 text-white" : "text-zinc-600 hover:text-zinc-950 hover:bg-zinc-100"
+                        }`}
+                      >
+                        <Icon className="w-4 h-4 shrink-0" />
+                        <span>{t.label}</span>
+                      </button>
+                    );
+                  })}
+                </nav>
+              </div>
+              <div className="hidden md:block px-2 pt-4 border-t border-zinc-200/60 text-[11px] text-zinc-400">FyDry Task v1.0 • Cuenta FyDry</div>
+            </div>
+
+            <div className="flex-1 min-h-0 p-5 sm:p-6 overflow-y-auto flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between pb-4 mb-4 border-b border-zinc-100">
+                  <h3 className="text-base font-bold text-zinc-950">{current.label}</h3>
+                  <button type="button" onClick={onClose} aria-label="Cerrar" className="p-1 rounded-lg text-zinc-400 hover:text-zinc-700 cursor-pointer">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+      {tab === "categories" && (
+      <Section hint="Organiza tus tareas por área. Las de base también se pueden renombrar o borrar.">
         <ul className="space-y-2">
           {categories.map((c) => (
             <li key={c.id} className="flex items-center gap-2">
@@ -128,10 +208,11 @@ export default function SettingsView({
           <button type="submit" className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-emerald-700 text-white text-xs font-semibold cursor-pointer"><Plus className="w-3.5 h-3.5" /> Agregar</button>
         </form>
       </Section>
+      )}
 
+      {tab === "recurrences" && (
       <Section
-        title="Tareas recurrentes"
-        icon={Repeat}
+        hint="Se generan solas en tu semana."
         action={<button type="button" onClick={() => openForm({ kind: "new-recurrence" })} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-700 text-white text-[11px] font-semibold cursor-pointer"><Plus className="w-3.5 h-3.5" /> Nueva</button>}
       >
         {recs.loading ? (
@@ -160,8 +241,10 @@ export default function SettingsView({
           </ul>
         )}
       </Section>
+      )}
 
-      <Section title="Notificaciones" icon={Bell}>
+      {tab === "notifications" && (
+      <Section>
         <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl bg-zinc-50 border border-zinc-200/60">
           <div className="text-xs text-zinc-700 max-w-md">
             {push === "loading" && "Revisando este dispositivo…"}
@@ -232,6 +315,38 @@ export default function SettingsView({
           </ul>
         )}
       </Section>
-    </div>
+      )}
+
+      {tab === "account" && (
+        <Section>
+          <div className="flex items-center gap-3 p-3 rounded-2xl bg-zinc-50 border border-zinc-200/60">
+            <div className="w-10 h-10 rounded-xl bg-zinc-200 text-zinc-700 flex items-center justify-center font-bold text-sm shrink-0">
+              {user?.full_name?.charAt(0).toUpperCase() || "U"}
+            </div>
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-zinc-900 truncate">{user?.full_name || "Usuario"}</div>
+              <div className="text-xs text-zinc-500 truncate">{user?.email}</div>
+            </div>
+          </div>
+          <p className="mt-3 text-xs text-zinc-500 leading-relaxed">
+            Tu cuenta es la misma de FyDry. El nombre, el correo y la contraseña se cambian desde FyDry y aplican en las dos apps.
+          </p>
+          <button type="button" onClick={onLogout} className="mt-4 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-rose-200 text-rose-600 text-xs font-semibold hover:bg-rose-50 cursor-pointer">
+            <LogOut className="w-3.5 h-3.5" /> Cerrar sesión
+          </button>
+        </Section>
+      )}
+              </div>
+
+              <div className="pt-4 mt-6 border-t border-zinc-100 flex justify-end">
+                <button type="button" onClick={onClose} className="py-2 px-4 rounded-xl border border-zinc-200 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 cursor-pointer">
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }

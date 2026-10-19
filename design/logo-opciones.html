@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FyDry Task — Opciones de logo</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,700&family=Figtree:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#fdfbfa; --ink:#1c1416; --muted:#78706d; --line:#e7ded9; --card:#fff; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:Figtree, system-ui, sans-serif; padding:32px 16px 48px; }
+  h1 { font-family:Fraunces, Georgia, serif; font-size:28px; margin:0 0 4px; }
+  p.lead { color:var(--muted); margin:0 0 28px; font-size:14px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:20px; max-width:1200px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:24px; padding:20px; }
+  .tag { display:inline-block; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:#6e2234; background:#fbf1f3; padding:4px 10px; border-radius:999px; }
+  h2 { font-family:Fraunces, Georgia, serif; font-size:20px; margin:10px 0 4px; }
+  .desc { font-size:13px; color:var(--muted); margin:0 0 16px; line-height:1.5; }
+  .hero { display:flex; justify-content:center; padding:12px 0 18px; }
+  .hero svg { width:200px; height:200px; }
+  .row { display:flex; align-items:center; gap:14px; flex-wrap:wrap; border-top:1px solid var(--line); padding-top:14px; }
+  .lockup { display:flex; align-items:center; gap:10px; font-weight:700; font-size:18px; letter-spacing:-.01em; }
+  .lockup span b { color:#6e2234; }
+  .app { width:56px; height:56px; border-radius:14px; background:#fff; border:1px solid var(--line); display:grid; place-items:center; }
+  .dark { background:#18181b; border-color:#18181b; }
+  .tiny { display:flex; gap:8px; align-items:center; font-size:11px; color:var(--muted); }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <linearGradient id="arc" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5a1a28"/><stop offset="1" stop-color="#3d0f1a"/>
+    </linearGradient>
+    <linearGradient id="wave" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#7e2639"/><stop offset="1" stop-color="#6e2234"/>
+    </linearGradient>
+
+    <!-- Arco en C: mismo gesto que FyDry, abierto arriba a la derecha -->
+    <path id="c-arc" d="M140 371 A150 150 0 1 1 342 150" fill="none" stroke="url(#arc)" stroke-width="64"/>
+
+    <!-- Onda que sube con flecha (igual que FyDry) -->
+    <g id="wave-arrow">
+      <path d="M96 432 L214 312 Q252 274 290 312 L318 340 L392 262" fill="none" stroke="#fff" stroke-width="80" stroke-linejoin="round"/>
+      <path d="M96 432 L214 312 Q252 274 290 312 L318 340 L392 262" fill="none" stroke="url(#wave)" stroke-width="56" stroke-linejoin="round"/>
+      <path d="M462 176 L438 316 L388 268 L342 226 Z" fill="#fff" stroke="#fff" stroke-width="12" stroke-linejoin="round"/>
+      <path d="M462 176 L438 316 L388 268 L342 226 Z" fill="url(#wave)"/>
+    </g>
+
+    <!-- Insignia redonda con check (sustituye la moneda) -->
+    <g id="badge-check">
+      <circle cx="392" cy="118" r="70" fill="#fff"/>
+      <circle cx="392" cy="118" r="54" fill="none" stroke="url(#arc)" stroke-width="12"/>
+      <path d="M364 120 L384 140 L422 98" fill="none" stroke="url(#arc)" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+
+    <!-- Insignia de casilla (checklist) -->
+    <g id="badge-box">
+      <rect x="320" y="46" width="144" height="144" rx="38" fill="#fff"/>
+      <rect x="338" y="64" width="108" height="108" rx="26" fill="none" stroke="url(#arc)" stroke-width="12"/>
+      <path d="M364 120 L384 140 L422 98" fill="none" stroke="url(#arc)" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+
+    <!-- Opción B: la onda se convierte en un gran check que sale por el hueco -->
+    <g id="check-arrow">
+      <path d="M118 292 L218 392 L392 214" fill="none" stroke="#fff" stroke-width="84" stroke-linejoin="round"/>
+      <path d="M118 292 L218 392 L392 214" fill="none" stroke="url(#wave)" stroke-width="60" stroke-linejoin="round"/>
+      <path d="M470 132 L440 276 L392 228 L346 180 Z" fill="#fff" stroke="#fff" stroke-width="12" stroke-linejoin="round"/>
+      <path d="M470 132 L440 276 L392 228 L346 180 Z" fill="url(#wave)"/>
+    </g>
+
+    <symbol id="logo-a" viewBox="0 0 512 512"><use href="#c-arc"/><use href="#wave-arrow"/><use href="#badge-check"/></symbol>
+    <symbol id="logo-b" viewBox="0 0 512 512"><use href="#c-arc"/><use href="#check-arrow"/></symbol>
+    <symbol id="logo-c" viewBox="0 0 512 512"><use href="#c-arc"/><use href="#wave-arrow"/><use href="#badge-box"/></symbol>
+  </defs>
+</svg>
+
+<h1>FyDry Task · opciones de logo</h1>
+<p class="lead">Las tres conservan el arco en "C" y la onda que sube de FyDry; cambia el símbolo de dinero por uno de tareas.</p>
+
+<div class="grid">
+  <section class="card">
+    <span class="tag">Opción A</span>
+    <h2>Moneda → check</h2>
+    <p class="desc">La más cercana a FyDry: misma composición, la moneda con <b>$</b> pasa a ser una insignia con ✓. Se reconoce como "hermano" de inmediato.</p>
+    <div class="hero"><svg><use href="#logo-a"/></svg></div>
+    <div class="row">
+      <div class="lockup"><svg width="40" height="40"><use href="#logo-a"/></svg><span>FyDry <b>Task</b></span></div>
+      <div class="app"><svg width="40" height="40"><use href="#logo-a"/></svg></div>
+      <div class="tiny"><svg width="24" height="24"><use href="#logo-a"/></svg><svg width="16" height="16"><use href="#logo-a"/></svg> pestaña</div>
+    </div>
+  </section>
+
+  <section class="card">
+    <span class="tag">Opción B</span>
+    <h2>Check que sube</h2>
+    <p class="desc">La onda se convierte en un gran ✓ que termina en flecha y sale por el hueco del arco: "tarea hecha = avance". Más simple y legible en tamaños pequeños.</p>
+    <div class="hero"><svg><use href="#logo-b"/></svg></div>
+    <div class="row">
+      <div class="lockup"><svg width="40" height="40"><use href="#logo-b"/></svg><span>FyDry <b>Task</b></span></div>
+      <div class="app"><svg width="40" height="40"><use href="#logo-b"/></svg></div>
+      <div class="tiny"><svg width="24" height="24"><use href="#logo-b"/></svg><svg width="16" height="16"><use href="#logo-b"/></svg> pestaña</div>
+    </div>
+  </section>
+
+  <section class="card">
+    <span class="tag">Opción C</span>
+    <h2>Casilla de checklist</h2>
+    <p class="desc">Como la A, pero la insignia es una casilla marcada (☑), que comunica "checklist" de forma más directa.</p>
+    <div class="hero"><svg><use href="#logo-c"/></svg></div>
+    <div class="row">
+      <div class="lockup"><svg width="40" height="40"><use href="#logo-c"/></svg><span>FyDry <b>Task</b></span></div>
+      <div class="app"><svg width="40" height="40"><use href="#logo-c"/></svg></div>
+      <div class="tiny"><svg width="24" height="24"><use href="#logo-c"/></svg><svg width="16" height="16"><use href="#logo-c"/></svg> pestaña</div>
+    </div>
+  </section>
+</div>
+</body>
+</html>

@@ -71,3 +71,6 @@ npm install
 npm run dev
 ```
 Variables: `frontend/.env.local.example` y `backend/.env.example`.
+
+### Logo
+Fuente única: `frontend/public/logo_task.svg`. Si cambia, regenerar favicon, íconos de app e imagen OG con `node scripts/render-logo.mjs` (desde `frontend/`).

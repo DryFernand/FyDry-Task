@@ -62,24 +62,24 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       {
-        url: "/logo_vino_fondo_blanco.png",
+        url: "/logo_task_fondo_blanco.png",
         media: "(prefers-color-scheme: light)",
         type: "image/png",
       },
       {
-        url: "/logo_vino_fondo_blanco.png",
+        url: "/logo_task_fondo_blanco.png",
         media: "(prefers-color-scheme: dark)",
         type: "image/png",
       },
     ],
     shortcut: [
       {
-        url: "/logo_vino_fondo_blanco.png",
+        url: "/logo_task_fondo_blanco.png",
         media: "(prefers-color-scheme: light)",
         type: "image/png",
       },
       {
-        url: "/logo_vino_fondo_blanco.png",
+        url: "/logo_task_fondo_blanco.png",
         media: "(prefers-color-scheme: dark)",
         type: "image/png",
       },
@@ -92,7 +92,7 @@ export const metadata: Metadata = {
     siteName: "FyDry Task",
     images: [
       {
-        url: "/og_fydry.png",
+        url: "/og_task.png",
         width: 1200,
         height: 630,
         alt: "FyDry Task — Organiza tus tareas",
@@ -105,7 +105,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "FyDry Task — Organiza tus tareas, tranquiliza tu mente",
     description: "Claridad total sobre tus pendientes sin complicaciones.",
-    images: ["/og_fydry.png"],
+    images: ["/og_task.png"],
   },
   robots: {
     index: true,
@@ -131,7 +131,7 @@ export default async function RootLayout({
   const secChTheme = headerList.get("sec-ch-prefers-color-scheme");
   const isDark = themeCookie === "dark" || secChTheme === "dark";
 
-  const mobileIcon = isDark ? "/logo_vino_fondo_blanco.png" : "/logo_vino_fondo_blanco.png";
+  const mobileIcon = isDark ? "/logo_task_fondo_blanco.png" : "/logo_task_fondo_blanco.png";
   const manifestPath = isDark ? "/manifest.dark.json" : "/manifest.light.json";
 
   const jsonLd = {
@@ -142,8 +142,8 @@ export default async function RootLayout({
     description: "Plataforma minimalista de gestión de tareas.",
     applicationCategory: "ProductivityApplication",
     operatingSystem: "All",
-    image: `${siteUrl}/logo_vino_fondo_blanco.png`,
-    logo: `${siteUrl}/logo_vino_fondo_blanco.png`,
+    image: `${siteUrl}/logo_task_fondo_blanco.png`,
+    logo: `${siteUrl}/logo_task_fondo_blanco.png`,
     offers: {
       "@type": "Offer",
       price: "0",
@@ -167,7 +167,7 @@ export default async function RootLayout({
                     // Actualizar Apple Touch Icon para iOS Safari
                     var appleLink = document.getElementById('apple-touch-icon');
                     if (appleLink) {
-                      appleLink.href = dark ? '/logo_vino_fondo_blanco.png' : '/logo_vino_fondo_blanco.png';
+                      appleLink.href = dark ? '/logo_task_fondo_blanco.png' : '/logo_task_fondo_blanco.png';
                     }
 
                     // Actualizar Manifest para Android Chrome
@@ -179,7 +179,7 @@ export default async function RootLayout({
                     // Actualizar Favicon de pestaña
                     var favLink = document.getElementById('dynamic-favicon');
                     if (favLink) {
-                      favLink.href = dark ? '/logo_vino_fondo_blanco.png' : '/logo_vino_fondo_blanco.png';
+                      favLink.href = dark ? '/logo_task_fondo_blanco.png' : '/logo_task_fondo_blanco.png';
                     }
                   }
                   applyTheme(mql.matches);
@@ -199,8 +199,8 @@ export default async function RootLayout({
         <meta name="apple-mobile-web-app-title" content="FyDry Task" />
         <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
         <meta name="theme-color" content="#09090b" media="(prefers-color-scheme: dark)" />
-        <link id="dynamic-favicon" rel="icon" href="/logo_vino_fondo_blanco.png" type="image/png" media="(prefers-color-scheme: light)" />
-        <link rel="icon" href="/logo_vino_fondo_blanco.png" type="image/png" media="(prefers-color-scheme: dark)" />
+        <link id="dynamic-favicon" rel="icon" href="/logo_task_fondo_blanco.png" type="image/png" media="(prefers-color-scheme: light)" />
+        <link rel="icon" href="/logo_task_fondo_blanco.png" type="image/png" media="(prefers-color-scheme: dark)" />
         <link id="apple-touch-icon" rel="apple-touch-icon" sizes="180x180" href={mobileIcon} />
         <link id="app-manifest" rel="manifest" href={manifestPath} />
         <script

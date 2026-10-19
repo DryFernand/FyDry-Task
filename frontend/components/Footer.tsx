@@ -11,7 +11,7 @@ export default function Footer() {
             <Link href="/" className="flex items-center gap-2.5 mb-3 group">
               <div className="relative w-7 h-7 shrink-0 flex items-center justify-center">
                 <Image
-                  src="/logo_vino.png"
+                  src="/logo_task.svg"
                   alt="FyDry Task Logo"
                   fill
                   sizes="28px"

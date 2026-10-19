@@ -18,7 +18,7 @@ export default function Navbar() {
         <Link href="/" className="flex items-center gap-2.5 group">
           <div className="relative w-8 h-8 transition-transform duration-200 group-hover:scale-105 shrink-0 flex items-center justify-center">
             <Image
-              src="/logo_vino.png"
+              src="/logo_task.svg"
               alt="FyDry Task Logo"
               fill
               sizes="32px"

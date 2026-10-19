@@ -1,8 +1,9 @@
 from typing import Dict, Any
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 from app.core.database import get_db
+from app.models import Base
 
 router = APIRouter()
 
@@ -20,10 +21,15 @@ def db_health_check(db: Session = Depends(get_db)) -> Dict[str, Any]:
     try:
         # Executes simple select 1 to test Supabase PostgreSQL connection
         result = db.execute(text("SELECT 1")).scalar()
+        # Si faltan tablas, falta correr `alembic upgrade head` en esta base
+        existing = set(inspect(db.get_bind()).get_table_names())
+        missing = sorted(set(Base.metadata.tables) - existing)
         return {
             "status": "connected",
             "database": "Supabase PostgreSQL",
             "result": result,
+            "migrations": "ok" if not missing else "pendientes",
+            "missing_tables": missing,
         }
     except Exception:
         return {

@@ -8,7 +8,7 @@
   "theme_color": "#ffffff",
   "icons": [
     {
-      "src": "/logo_vino_fondo_blanco.png",
+      "src": "/logo_task_fondo_blanco.png",
       "sizes": "192x192 512x512",
       "type": "image/png",
       "purpose": "any maskable"

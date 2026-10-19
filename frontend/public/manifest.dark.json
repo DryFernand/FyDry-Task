@@ -8,7 +8,7 @@
   "theme_color": "#09090b",
   "icons": [
     {
-      "src": "/logo_blanco_fondo_negro.png",
+      "src": "/logo_task_fondo_blanco.png",
       "sizes": "192x192 512x512",
       "type": "image/png",
       "purpose": "any maskable"

@@ -201,3 +201,11 @@ html {
     page-break-before: always !important;
   }
 }
+
+/* Scroll horizontal sin barra visible (pestañas del modal de configuración) */
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}

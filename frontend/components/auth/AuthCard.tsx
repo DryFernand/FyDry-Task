@@ -96,7 +96,7 @@ export default function AuthCard({ initialView = "login" }: AuthCardProps) {
         <Link href="/" className="inline-flex items-center gap-2.5 group">
           <div className="relative w-10 h-10 transition-transform duration-200 group-hover:scale-105 shrink-0 flex items-center justify-center">
             <Image
-              src="/logo_vino.png"
+              src="/logo_task.svg"
               alt="FyDry Task Logo"
               fill
               sizes="40px"

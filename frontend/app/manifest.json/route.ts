@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
     theme_color: isDark ? "#09090b" : "#ffffff",
     icons: [
       {
-        src: isDark ? "/logo_blanco_fondo_negro.png" : "/logo_negro_fondo_blanco.png",
+        src: "/logo_task_fondo_blanco.png",
         sizes: "192x192 512x512",
         type: "image/png",
         purpose: "any maskable",

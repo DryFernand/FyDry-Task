@@ -78,7 +78,7 @@ export default function TodayView({
   const rowProps = { onChanged: reloadAll, onEdit: (t: Task) => openForm({ kind: "edit", task: t }), onError };
 
   return (
-    <div className="space-y-5 max-w-3xl">
+    <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700 uppercase tracking-wider">
@@ -109,102 +109,108 @@ export default function TodayView({
         </div>
       )}
 
-      {/* Progreso del día: barra apilada por estado, con leyenda en texto */}
-      <div className="p-4 sm:p-5 rounded-3xl bg-white border border-zinc-200/80">
-        <div className="flex items-end justify-between gap-3">
-          <div>
-            <div className="text-[11px] text-zinc-500 font-medium">Cumplimiento de hoy</div>
-            <div className="text-3xl font-bold tracking-tight text-zinc-950 tabular-nums">
-              {score.rate === null ? "—" : `${Math.round(score.rate * 100)}%`}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+        <div className="lg:col-span-2 space-y-5 order-2 lg:order-1">
+          <form onSubmit={addQuick} className="flex gap-2">
+            <label htmlFor="quick-add" className="sr-only">Nueva tarea para hoy</label>
+            <input
+              id="quick-add"
+              value={quick}
+              onChange={(e) => setQuick(e.target.value)}
+              maxLength={200}
+              placeholder="Agregar tarea para hoy y pulsa Enter"
+              className="flex-1 min-w-0 px-4 py-3 rounded-2xl border border-zinc-200 bg-white text-sm outline-none focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900"
+            />
+            <button type="submit" disabled={adding} aria-label="Agregar" className="px-3.5 rounded-2xl bg-emerald-700 hover:bg-emerald-800 text-white cursor-pointer disabled:opacity-60">
+              {adding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+            </button>
+            <button type="button" onClick={() => openForm({ kind: "new", date: today })} aria-label="Nueva tarea con opciones" title="Más opciones" className="px-3.5 rounded-2xl border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50 cursor-pointer">
+              <SlidersHorizontal className="w-4 h-4" />
+            </button>
+          </form>
+
+          {day.loading ? (
+            <div className="py-12 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-zinc-400" /></div>
+          ) : tasks.length === 0 ? (
+            <div className="rounded-3xl border border-dashed border-zinc-300 bg-white p-10 text-center">
+              <CalendarPlus className="w-8 h-8 mx-auto text-emerald-700" aria-hidden="true" />
+              <h2 className="mt-3 text-base font-bold text-zinc-900">Tu día está libre</h2>
+              <p className="mt-1 text-sm text-zinc-500">Agrega lo que harás hoy o tráelo de tu bandeja &quot;Sin fecha&quot;.</p>
+            </div>
+          ) : (
+            <div className="space-y-5">
+              {pendingList.length > 0 && (
+                <section className="space-y-2">
+                  <h2 className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">Por hacer · {pendingList.length}</h2>
+                  {pendingList.map((t) => <TaskRow key={t.id} task={t} category={catOf(t.category_id)} {...rowProps} />)}
+                </section>
+              )}
+              {markedList.length > 0 && (
+                <section className="space-y-2">
+                  <h2 className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">Marcadas · {markedList.length}</h2>
+                  {markedList.map((t) => <TaskRow key={t.id} task={t} category={catOf(t.category_id)} {...rowProps} />)}
+                </section>
+              )}
+            </div>
+          )}
+
+        </div>
+        <aside className="space-y-5 order-1 lg:order-2 lg:sticky lg:top-6">
+          {/* Progreso del día: barra apilada por estado, con leyenda en texto */}
+          <div className="p-4 sm:p-5 rounded-3xl bg-white border border-zinc-200/80">
+            <div className="flex items-end justify-between gap-3">
+              <div>
+                <div className="text-[11px] text-zinc-500 font-medium">Cumplimiento de hoy</div>
+                <div className="text-3xl font-bold tracking-tight text-zinc-950 tabular-nums">
+                  {score.rate === null ? "—" : `${Math.round(score.rate * 100)}%`}
+                </div>
+              </div>
+              <div className="text-xs text-zinc-500 text-right">
+                <span className="font-semibold text-zinc-900">{score.marked}</span> de {score.total} marcadas
+              </div>
+            </div>
+            <div className="mt-3 flex h-2.5 w-full gap-[2px] rounded-full overflow-hidden bg-zinc-100" role="img" aria-label="Tareas por estado">
+              {ORDER.map((s) => {
+                const n = tasks.filter((t) => t.status === s).length;
+                return n ? <div key={s} style={{ width: `${(n / Math.max(score.total, 1)) * 100}%`, background: STATUS_META[s as keyof typeof STATUS_META].color }} title={`${STATUS_META[s as keyof typeof STATUS_META].label}: ${n}`} /> : null;
+              })}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-zinc-500">
+              {ORDER.map((s) => {
+                const n = tasks.filter((t) => t.status === s).length;
+                const meta = STATUS_META[s as keyof typeof STATUS_META];
+                return (
+                  <span key={s} className="inline-flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full" style={{ background: meta.color }} aria-hidden="true" />
+                    {meta.label} <span className="font-semibold text-zinc-800">{n}</span>
+                  </span>
+                );
+              })}
             </div>
           </div>
-          <div className="text-xs text-zinc-500 text-right">
-            <span className="font-semibold text-zinc-900">{score.marked}</span> de {score.total} marcadas
-          </div>
-        </div>
-        <div className="mt-3 flex h-2.5 w-full gap-[2px] rounded-full overflow-hidden bg-zinc-100" role="img" aria-label="Tareas por estado">
-          {ORDER.map((s) => {
-            const n = tasks.filter((t) => t.status === s).length;
-            return n ? <div key={s} style={{ width: `${(n / Math.max(score.total, 1)) * 100}%`, background: STATUS_META[s as keyof typeof STATUS_META].color }} title={`${STATUS_META[s as keyof typeof STATUS_META].label}: ${n}`} /> : null;
-          })}
-        </div>
-        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-zinc-500">
-          {ORDER.map((s) => {
-            const n = tasks.filter((t) => t.status === s).length;
-            const meta = STATUS_META[s as keyof typeof STATUS_META];
-            return (
-              <span key={s} className="inline-flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full" style={{ background: meta.color }} aria-hidden="true" />
-                {meta.label} <span className="font-semibold text-zinc-800">{n}</span>
-              </span>
-            );
-          })}
-        </div>
-      </div>
 
-      <form onSubmit={addQuick} className="flex gap-2">
-        <label htmlFor="quick-add" className="sr-only">Nueva tarea para hoy</label>
-        <input
-          id="quick-add"
-          value={quick}
-          onChange={(e) => setQuick(e.target.value)}
-          maxLength={200}
-          placeholder="Agregar tarea para hoy y pulsa Enter"
-          className="flex-1 min-w-0 px-4 py-3 rounded-2xl border border-zinc-200 bg-white text-sm outline-none focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900"
-        />
-        <button type="submit" disabled={adding} aria-label="Agregar" className="px-3.5 rounded-2xl bg-emerald-700 hover:bg-emerald-800 text-white cursor-pointer disabled:opacity-60">
-          {adding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-        </button>
-        <button type="button" onClick={() => openForm({ kind: "new", date: today })} aria-label="Nueva tarea con opciones" title="Más opciones" className="px-3.5 rounded-2xl border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50 cursor-pointer">
-          <SlidersHorizontal className="w-4 h-4" />
-        </button>
-      </form>
-
-      {day.loading ? (
-        <div className="py-12 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-zinc-400" /></div>
-      ) : tasks.length === 0 ? (
-        <div className="rounded-3xl border border-dashed border-zinc-300 bg-white p-10 text-center">
-          <CalendarPlus className="w-8 h-8 mx-auto text-emerald-700" aria-hidden="true" />
-          <h2 className="mt-3 text-base font-bold text-zinc-900">Tu día está libre</h2>
-          <p className="mt-1 text-sm text-zinc-500">Agrega lo que harás hoy o tráelo de tu bandeja &quot;Sin fecha&quot;.</p>
-        </div>
-      ) : (
-        <div className="space-y-5">
-          {pendingList.length > 0 && (
-            <section className="space-y-2">
-              <h2 className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">Por hacer · {pendingList.length}</h2>
-              {pendingList.map((t) => <TaskRow key={t.id} task={t} category={catOf(t.category_id)} {...rowProps} />)}
-            </section>
-          )}
-          {markedList.length > 0 && (
-            <section className="space-y-2">
-              <h2 className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">Marcadas · {markedList.length}</h2>
-              {markedList.map((t) => <TaskRow key={t.id} task={t} category={catOf(t.category_id)} {...rowProps} />)}
-            </section>
-          )}
-        </div>
-      )}
-
-      <section className="rounded-3xl border border-zinc-200/80 bg-white">
-        <button type="button" onClick={() => setShowInbox(!showInbox)} aria-expanded={showInbox} className="w-full flex items-center justify-between p-4 text-xs font-semibold text-zinc-700 cursor-pointer">
-          <span className="inline-flex items-center gap-2"><Inbox className="w-4 h-4 text-zinc-400" /> Sin fecha · {inbox.data?.length ?? 0}</span>
-          <span className="text-zinc-400">{showInbox ? "Ocultar" : "Ver"}</span>
-        </button>
-        {showInbox && (
-          <div className="px-4 pb-4 space-y-2">
-            {(inbox.data ?? []).length === 0 && <p className="text-xs text-zinc-400">Nada en la bandeja.</p>}
-            {(inbox.data ?? []).map((t) => (
-              <div key={t.id} className="flex items-center gap-2 p-2.5 rounded-2xl border border-zinc-200/80">
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: catOf(t.category_id)?.color ?? "#d4d4d8" }} aria-hidden="true" />
-                <button type="button" onClick={() => openForm({ kind: "edit", task: t })} className="flex-1 min-w-0 text-left text-sm text-zinc-800 truncate cursor-pointer">{t.title}</button>
-                <button type="button" onClick={() => planToday(t)} className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-semibold cursor-pointer hover:bg-emerald-100">
-                  Hoy
-                </button>
+          <section className="rounded-3xl border border-zinc-200/80 bg-white">
+            <button type="button" onClick={() => setShowInbox(!showInbox)} aria-expanded={showInbox} className="w-full flex items-center justify-between p-4 text-xs font-semibold text-zinc-700 cursor-pointer lg:cursor-default">
+              <span className="inline-flex items-center gap-2"><Inbox className="w-4 h-4 text-zinc-400" /> Sin fecha · {inbox.data?.length ?? 0}</span>
+              <span className="text-zinc-400 lg:hidden">{showInbox ? "Ocultar" : "Ver"}</span>
+            </button>
+            {(
+              <div className={`px-4 pb-4 space-y-2 ${showInbox ? "" : "hidden lg:block"}`}>
+                {(inbox.data ?? []).length === 0 && <p className="text-xs text-zinc-400">Nada en la bandeja.</p>}
+                {(inbox.data ?? []).map((t) => (
+                  <div key={t.id} className="flex items-center gap-2 p-2.5 rounded-2xl border border-zinc-200/80">
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: catOf(t.category_id)?.color ?? "#d4d4d8" }} aria-hidden="true" />
+                    <button type="button" onClick={() => openForm({ kind: "edit", task: t })} className="flex-1 min-w-0 text-left text-sm text-zinc-800 truncate cursor-pointer">{t.title}</button>
+                    <button type="button" onClick={() => planToday(t)} className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-semibold cursor-pointer hover:bg-emerald-100">
+                      Hoy
+                    </button>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        )}
-      </section>
+            )}
+          </section>
+        </aside>
+      </div>
     </div>
   );
 }

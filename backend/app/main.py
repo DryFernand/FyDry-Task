@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -6,6 +7,8 @@ from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.core.database import init_db
 from app.api.v1.router import api_router
+
+logger = logging.getLogger("fydry_task")
 
 
 @asynccontextmanager
@@ -33,7 +36,18 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     return JSONResponse(status_code=422, content={"detail": errors})
 
 
-# Set all CORS enabled origins
+@app.middleware("http")
+async def catch_unhandled(request: Request, call_next):
+    """Un error no controlado se responde aquí, DENTRO de CORS: el navegador recibe un 500 legible
+    en vez de un fallo de CORS que el frontend muestra como "no se pudo conectar"."""
+    try:
+        return await call_next(request)
+    except Exception:
+        logger.exception("Error no controlado en %s %s", request.method, request.url.path)
+        return JSONResponse(status_code=500, content={"detail": "Error interno del servidor. Intenta de nuevo en un momento."})
+
+
+# Set all CORS enabled origins (se registra después: queda por fuera del middleware anterior)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list(dict.fromkeys([*settings.CORS_ORIGINS, settings.FRONTEND_URL])),

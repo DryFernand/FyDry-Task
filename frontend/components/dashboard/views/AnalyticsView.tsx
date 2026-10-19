@@ -129,7 +129,7 @@ export default function AnalyticsView({ refreshKey, onError }: { refreshKey: num
                 </div>
               </Card>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4">
                 <Card title="Por día de la semana" icon={BarChart3}>
                   {m.by_weekday.map((r) => <BarRow key={r.weekday} label={r.name.charAt(0).toUpperCase() + r.name.slice(1)} rate={r.rate} count={r.count} />)}
                 </Card>

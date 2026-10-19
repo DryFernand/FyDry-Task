@@ -2,31 +2,45 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
 import { AnimatePresence, motion } from "motion/react";
-import { BarChart3, BrainCircuit, CalendarDays, CheckCircle2, AlertCircle, Loader2, LogOut, Plus, Settings, Sun } from "lucide-react";
+import { AlertCircle, BarChart3, BrainCircuit, CalendarDays, CheckCircle2, Loader2, LogOut, Menu, Plus, Settings, Sun, X } from "lucide-react";
 import { apiRequest } from "@/lib/api";
 import { api, Category, todayISO } from "@/lib/tasks";
 import { registerServiceWorker } from "@/lib/push";
 import { useLanguage } from "@/context/LanguageContext";
+import BrandMark from "@/components/BrandMark";
 import TaskFormModal, { TaskFormTarget } from "./TaskFormModal";
 import DayCloseModal from "./DayCloseModal";
+import SettingsModal from "./SettingsModal";
 import TodayView from "./views/TodayView";
 import WeekView from "./views/WeekView";
 import AnalyticsView from "./views/AnalyticsView";
 import ProfileView from "./views/ProfileView";
-import SettingsView from "./views/SettingsView";
 
 type User = { id?: string; full_name?: string; email?: string };
-type Tab = "today" | "week" | "analytics" | "profile" | "settings";
+type Tab = "today" | "week" | "analytics" | "profile";
+type NavItem = { id: Tab; label: string; icon: typeof Sun };
 
-const TABS: { id: Tab; label: string; icon: typeof Sun }[] = [
-  { id: "today", label: "Mi día", icon: Sun },
-  { id: "week", label: "Semana", icon: CalendarDays },
-  { id: "analytics", label: "Análisis", icon: BarChart3 },
-  { id: "profile", label: "Perfil IA", icon: BrainCircuit },
-  { id: "settings", label: "Configuración", icon: Settings },
+// Mismo patrón que FyDry: grupos con título en el menú lateral
+const NAV_GROUPS: { id: string; title: string; items: NavItem[] }[] = [
+  {
+    id: "main",
+    title: "PRINCIPAL",
+    items: [
+      { id: "today", label: "Mi día", icon: Sun },
+      { id: "week", label: "Semana", icon: CalendarDays },
+    ],
+  },
+  {
+    id: "insights",
+    title: "ANÁLISIS",
+    items: [
+      { id: "analytics", label: "Análisis", icon: BarChart3 },
+      { id: "profile", label: "Perfil IA", icon: BrainCircuit },
+    ],
+  },
 ];
+const ALL_TABS = NAV_GROUPS.flatMap((g) => g.items);
 
 const SESSION_KEYS = ["fydry_token", "fydry_access_token", "fydry_user"];
 
@@ -34,20 +48,50 @@ function clearSession() {
   SESSION_KEYS.forEach((k) => localStorage.removeItem(k));
 }
 
-function BrandMark({ size = 36 }: { size?: number }) {
+/** Lee ?tab=, ?close=1 y ?settings=1 (los usan los enlaces de las notificaciones push). */
+function fromUrl() {
+  if (typeof window === "undefined") return { tab: "today" as Tab, close: false, settings: false };
+  const p = new URLSearchParams(window.location.search);
+  const tab = p.get("tab") as Tab;
+  return {
+    tab: ALL_TABS.some((t) => t.id === tab) ? tab : ("today" as Tab),
+    close: p.get("close") === "1",
+    settings: p.get("tab") === "settings" || p.get("settings") === "1",
+  };
+}
+
+function NavButton({ item, active, onClick }: { item: NavItem; active: boolean; onClick: () => void }) {
+  const Icon = item.icon;
   return (
-    <div className="relative shrink-0 flex items-center justify-center" style={{ width: size, height: size }}>
-      <Image src="/logo_vino.png" alt="FyDry Task Logo" fill sizes={`${size}px`} className="object-contain" priority />
-    </div>
+    <button
+      type="button"
+      aria-current={active ? "page" : undefined}
+      onClick={onClick}
+      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-xs font-semibold transition-all group cursor-pointer ${
+        active ? "bg-emerald-700 text-white shadow-xs" : "text-zinc-500 hover:text-zinc-950 hover:bg-zinc-100/70"
+      }`}
+    >
+      <Icon className={`w-4 h-4 shrink-0 transition-transform group-hover:scale-105 ${active ? "text-white" : "text-zinc-400 group-hover:text-zinc-950"}`} />
+      <span className="truncate">{item.label}</span>
+    </button>
   );
 }
 
-/** Lee ?tab= y ?close=1 (los usan los enlaces de las notificaciones push). */
-function initialFromUrl(): { tab: Tab; close: boolean } {
-  if (typeof window === "undefined") return { tab: "today", close: false };
-  const p = new URLSearchParams(window.location.search);
-  const tab = p.get("tab") as Tab;
-  return { tab: TABS.some((t) => t.id === tab) ? tab : "today", close: p.get("close") === "1" };
+function NavGroups({ tab, onSelect }: { tab: Tab; onSelect: (t: Tab) => void }) {
+  return (
+    <>
+      {NAV_GROUPS.map((group, i) => (
+        <div key={group.id} className="space-y-1">
+          <div className={`text-[10px] uppercase tracking-wider font-semibold text-zinc-400 px-3 pb-1 select-none ${i === 0 ? "pt-1" : "pt-2.5"}`}>{group.title}</div>
+          <div className="space-y-1">
+            {group.items.map((item) => (
+              <NavButton key={item.id} item={item} active={tab === item.id} onClick={() => onSelect(item.id)} />
+            ))}
+          </div>
+        </div>
+      ))}
+    </>
+  );
 }
 
 export default function DashboardLayout() {
@@ -55,8 +99,11 @@ export default function DashboardLayout() {
   const { t } = useLanguage();
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [tab, setTab] = useState<Tab>(() => initialFromUrl().tab);
-  const [closeDate, setCloseDate] = useState<string | null>(() => (initialFromUrl().close ? todayISO() : null));
+  const [tab, setTab] = useState<Tab>(() => fromUrl().tab);
+  const [closeDate, setCloseDate] = useState<string | null>(() => (fromUrl().close ? todayISO() : null));
+  const [isSettingsOpen, setIsSettingsOpen] = useState(() => fromUrl().settings);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [hideBottomBar, setHideBottomBar] = useState(false);
   const [formTarget, setFormTarget] = useState<TaskFormTarget | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -72,6 +119,20 @@ export default function DashboardLayout() {
   const loadCategories = useCallback(() => {
     api.categories().then(setCategories).catch((e) => onError(e.message));
   }, [onError]);
+  const closeSettings = useCallback(() => setIsSettingsOpen(false), []);
+
+  // Como en FyDry: en el teléfono la barra inferior se oculta al bajar y aparece al subir
+  useEffect(() => {
+    let lastY = window.scrollY;
+    const onScroll = () => {
+      const y = window.scrollY;
+      if (Math.abs(y - lastY) < 8) return;
+      setHideBottomBar(window.matchMedia("(max-width: 767px)").matches && y > lastY && y > 80);
+      lastY = y;
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   // Auth guard: carga optimista desde localStorage y revalidación en segundo plano
   useEffect(() => {
@@ -125,6 +186,7 @@ export default function DashboardLayout() {
 
   const goTo = (next: Tab) => {
     setTab(next);
+    setIsMobileMenuOpen(false);
     window.history.replaceState(null, "", next === "today" ? "/dashboard" : `/dashboard?tab=${next}`);
     window.scrollTo({ top: 0 });
   };
@@ -151,11 +213,12 @@ export default function DashboardLayout() {
   const initial = currentUser?.full_name?.charAt(0).toUpperCase() || "U";
   const shared = { refreshKey, onError };
   const openForm = (target: TaskFormTarget) => setFormTarget(target);
+  const newTask = () => openForm({ kind: "new", date: todayISO() });
 
   return (
     <div className="min-h-screen bg-zinc-50/60 antialiased font-sans text-zinc-900">
-      {/* Sidebar escritorio */}
-      <aside className="hidden md:flex flex-col w-64 border-r border-zinc-200/80 bg-white h-dvh p-4 fixed inset-y-0 left-0 z-30 justify-between">
+      {/* Menú lateral de escritorio (fijo, como FyDry) */}
+      <aside className="hidden md:flex flex-col w-64 min-w-[256px] max-w-[256px] border-r border-zinc-200/80 bg-white h-dvh p-4 fixed inset-y-0 left-0 z-30 justify-between overflow-hidden">
         <div className="flex flex-col min-h-0 flex-1">
           <div className="flex items-center gap-3 px-2 py-3 mb-3">
             <BrandMark />
@@ -164,38 +227,20 @@ export default function DashboardLayout() {
               <span className="text-[10px] text-zinc-400 font-medium">{t.brand.tagline}</span>
             </div>
           </div>
-
-          <button
-            type="button"
-            onClick={() => openForm({ kind: "new", date: todayISO() })}
-            className="mb-4 w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-2xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold shadow-xs cursor-pointer"
-          >
-            <Plus className="w-4 h-4" /> Nueva tarea
-          </button>
-
-          <nav className="space-y-1 flex-1 overflow-y-auto" aria-label="Secciones">
-            {TABS.map((item) => {
-              const Icon = item.icon;
-              const active = tab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  aria-current={active ? "page" : undefined}
-                  onClick={() => goTo(item.id)}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-xs font-semibold transition-all cursor-pointer ${
-                    active ? "bg-zinc-900 text-white" : "text-zinc-500 hover:text-zinc-950 hover:bg-zinc-100/70"
-                  }`}
-                >
-                  <Icon className={`w-4 h-4 shrink-0 ${active ? "text-white" : "text-zinc-400"}`} />
-                  <span className="truncate">{item.label}</span>
-                </button>
-              );
-            })}
+          <nav className="space-y-3 flex-1 overflow-y-auto pr-1" aria-label="Secciones">
+            <NavGroups tab={tab} onSelect={goTo} />
           </nav>
         </div>
 
-        <div className="pt-3 border-t border-zinc-100">
+        <div className="pt-3 border-t border-zinc-100 space-y-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setIsSettingsOpen(true)}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-2xl text-xs font-semibold text-zinc-500 hover:text-zinc-950 hover:bg-zinc-100/70 transition-all cursor-pointer"
+          >
+            <Settings className="w-4 h-4 shrink-0 text-zinc-400" />
+            <span className="truncate">Configuración</span>
+          </button>
           <div className="p-2.5 rounded-2xl bg-zinc-50 border border-zinc-200/50 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-7 h-7 rounded-xl bg-zinc-200 text-zinc-700 flex items-center justify-center font-bold text-[11px] shrink-0">{initial}</div>
@@ -211,53 +256,91 @@ export default function DashboardLayout() {
         </div>
       </aside>
 
-      {/* Cabecera móvil */}
-      <header className="md:hidden bg-white border-b border-zinc-200 px-4 py-3 flex items-center justify-between sticky top-0 z-30">
+      {/* Cabecera móvil: configuración + menú, como FyDry */}
+      <header className="md:hidden bg-white border-b border-zinc-200 p-4 flex items-center justify-between sticky top-0 z-30">
         <div className="flex items-center gap-2.5">
           <BrandMark size={28} />
           <span className="font-bold text-sm text-zinc-950">{t.brand.name}</span>
         </div>
         <div className="flex items-center gap-2">
-          <button type="button" onClick={() => goTo("settings")} aria-label="Configuración" className={`p-2.5 rounded-2xl border cursor-pointer ${tab === "settings" ? "border-zinc-900 text-zinc-900" : "border-zinc-200 text-zinc-600"}`}>
+          <button type="button" onClick={() => setIsSettingsOpen(true)} aria-label="Configuración" className="p-2.5 rounded-2xl border border-zinc-200 text-zinc-600 cursor-pointer">
             <Settings className="w-4 h-4" />
           </button>
-          <button type="button" onClick={handleLogout} className="p-2.5 rounded-2xl border border-zinc-200 text-zinc-600 hover:text-rose-600 cursor-pointer" aria-label={t.nav.logout}>
-            <LogOut className="w-4 h-4" />
+          <button
+            type="button"
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            aria-label={isMobileMenuOpen ? "Cerrar menú" : "Abrir menú"}
+            aria-expanded={isMobileMenuOpen}
+            className="p-2.5 rounded-2xl bg-emerald-700 text-white cursor-pointer"
+          >
+            {isMobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
           </button>
         </div>
       </header>
 
-      <div className="md:pl-64">
-        <main className="p-4 sm:p-6 lg:p-8 pb-28 md:pb-10 max-w-7xl mx-auto w-full">
+      <AnimatePresence>
+        {isMobileMenuOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="md:hidden fixed inset-x-0 top-[73px] z-40 bg-white border-b border-zinc-200 p-4 shadow-xl max-h-[calc(100dvh-73px)] overflow-y-auto space-y-3"
+          >
+            <nav className="space-y-3" aria-label="Secciones">
+              <NavGroups tab={tab} onSelect={goTo} />
+            </nav>
+            <div className="pt-2 border-t border-zinc-100">
+              <button type="button" onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold text-rose-600 hover:bg-rose-50 cursor-pointer">
+                <LogOut className="w-4 h-4" /> {t.nav.logout}
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="flex-1 min-w-0 flex flex-col md:pl-64">
+        {/* Barra superior de escritorio: aquí va "Nueva tarea", como "Registrar" en FyDry */}
+        <div className="hidden md:flex items-center justify-end px-6 lg:px-8 pt-6 pb-2">
+          <button
+            type="button"
+            onClick={newTask}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl border border-zinc-200/90 hover:border-zinc-300 bg-white hover:bg-zinc-50 text-zinc-800 font-semibold text-xs shadow-2xs transition-all active:scale-95 cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5 text-zinc-900" />
+            <span>Nueva tarea</span>
+          </button>
+        </div>
+
+        <main className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 md:pt-2 lg:pt-2 pb-28 md:pb-10 w-full max-w-[1600px] mx-auto">
           <AnimatePresence mode="wait">
             <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.18 }}>
               {tab === "today" && <TodayView categories={categories} openForm={openForm} openClose={setCloseDate} {...shared} />}
               {tab === "week" && <WeekView categories={categories} openForm={openForm} onInfo={onInfo} {...shared} />}
               {tab === "analytics" && <AnalyticsView {...shared} />}
               {tab === "profile" && <ProfileView {...shared} />}
-              {tab === "settings" && (
-                <SettingsView categories={categories} reloadCategories={() => { loadCategories(); bump(); }} openForm={openForm} onInfo={onInfo} {...shared} />
-              )}
             </motion.div>
           </AnimatePresence>
         </main>
       </div>
 
-      {/* Navegación inferior móvil */}
-      <nav aria-label="Navegación inferior" className="md:hidden fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-md border-t border-zinc-200/80 z-30 pb-[env(safe-area-inset-bottom)] px-3 py-1.5">
+      {/* Barra inferior móvil con botón central de nueva tarea */}
+      <nav
+        aria-label="Navegación inferior"
+        className={`md:hidden fixed bottom-0 inset-x-0 bg-white/90 backdrop-blur-md border-t border-zinc-200/80 z-30 pb-[env(safe-area-inset-bottom)] px-3 py-1.5 transition-transform duration-300 ${hideBottomBar ? "translate-y-full" : "translate-y-0"}`}
+      >
         <div className="flex items-center justify-around max-w-md mx-auto">
-          {TABS.slice(0, 2).map((item) => (
+          {ALL_TABS.slice(0, 2).map((item) => (
             <MobileTab key={item.id} item={item} active={tab === item.id} onClick={() => goTo(item.id)} />
           ))}
           <button
             type="button"
-            onClick={() => openForm({ kind: "new", date: todayISO() })}
+            onClick={newTask}
             aria-label="Nueva tarea"
-            className="w-11 h-11 rounded-full bg-emerald-700 text-white flex items-center justify-center shadow-md -mt-4 active:scale-95 transition-transform cursor-pointer shrink-0"
+            className="w-11 h-11 rounded-full bg-emerald-700 text-white flex items-center justify-center shadow-md -mt-4 active:scale-95 transition-transform hover:bg-emerald-800 cursor-pointer shrink-0"
           >
             <Plus className="w-5 h-5" />
           </button>
-          {TABS.slice(2, 4).map((item) => (
+          {ALL_TABS.slice(2, 4).map((item) => (
             <MobileTab key={item.id} item={item} active={tab === item.id} onClick={() => goTo(item.id)} />
           ))}
         </div>
@@ -265,6 +348,17 @@ export default function DashboardLayout() {
 
       <TaskFormModal target={formTarget} categories={categories} onClose={() => setFormTarget(null)} onSaved={bump} />
       <DayCloseModal date={closeDate} categories={categories} onClose={() => setCloseDate(null)} onSaved={() => { bump(); onInfo("Día cerrado. ¡Buen trabajo!"); }} />
+      <SettingsModal
+        open={isSettingsOpen}
+        onClose={closeSettings}
+        user={currentUser}
+        onLogout={handleLogout}
+        categories={categories}
+        reloadCategories={() => { loadCategories(); bump(); }}
+        openForm={openForm}
+        onInfo={onInfo}
+        {...shared}
+      />
 
       <AnimatePresence>
         {toast && (
@@ -286,16 +380,16 @@ export default function DashboardLayout() {
   );
 }
 
-function MobileTab({ item, active, onClick }: { item: (typeof TABS)[number]; active: boolean; onClick: () => void }) {
+function MobileTab({ item, active, onClick }: { item: NavItem; active: boolean; onClick: () => void }) {
   const Icon = item.icon;
   return (
     <button
       type="button"
       onClick={onClick}
       aria-current={active ? "page" : undefined}
-      className={`flex flex-col items-center justify-center gap-0.5 py-1 px-2 rounded-xl text-[10px] cursor-pointer ${active ? "text-zinc-950 font-semibold" : "text-zinc-400 font-medium"}`}
+      className={`flex flex-col items-center justify-center gap-0.5 py-1 px-2 rounded-xl transition-colors cursor-pointer text-[10px] ${active ? "text-zinc-950 font-semibold" : "text-zinc-400 hover:text-zinc-600 font-medium"}`}
     >
-      <Icon className="w-5 h-5" />
+      <Icon className={`w-5 h-5 ${active ? "text-zinc-950" : "text-zinc-400"}`} />
       <span className="truncate">{item.label}</span>
     </button>
   );

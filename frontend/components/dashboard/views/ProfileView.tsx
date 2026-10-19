@@ -26,7 +26,7 @@ export default function ProfileView({ refreshKey, onError }: { refreshKey: numbe
   const p = data?.profile;
 
   return (
-    <div className="space-y-5 max-w-3xl">
+    <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700 uppercase tracking-wider">
@@ -65,7 +65,7 @@ export default function ProfileView({ refreshKey, onError }: { refreshKey: numbe
               <div className="text-4xl" aria-hidden="true">{p.emoji ?? "✨"}</div>
               <div className="mt-2 text-[11px] uppercase tracking-wider text-emerald-100 font-semibold">Tu perfil</div>
               <h2 className="text-2xl sm:text-3xl font-bold">{p.type}</h2>
-              <p className="mt-3 text-sm text-emerald-50 leading-relaxed max-w-xl">{p.summary}</p>
+              <p className="mt-3 text-sm sm:text-base text-emerald-50 leading-relaxed max-w-3xl">{p.summary}</p>
               <p className="mt-4 text-[11px] text-emerald-200">
                 Basado en {formatDay(data!.period_start, { day: "numeric", month: "short" })} – {formatDay(data!.period_end, { day: "numeric", month: "short" })} ·{" "}
                 {data!.metrics.evaluated} tareas · {Math.round((data!.metrics.completion_rate ?? 0) * 100)}% de cumplimiento
@@ -73,7 +73,7 @@ export default function ProfileView({ refreshKey, onError }: { refreshKey: numbe
             </div>
           </section>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             <section className="p-5 rounded-3xl bg-white border border-zinc-200/80">
               <h3 className="text-xs font-bold text-zinc-900 mb-3">¿Por qué?</h3>
               <ul className="space-y-2.5">
@@ -96,7 +96,7 @@ export default function ProfileView({ refreshKey, onError }: { refreshKey: numbe
                 </ul>
               </section>
             )}
-            <section className="p-5 rounded-3xl bg-white border border-zinc-200/80 md:col-span-2">
+            <section className="p-5 rounded-3xl bg-white border border-zinc-200/80 md:col-span-2 xl:col-span-1">
               <h3 className="text-xs font-bold text-zinc-900 mb-3">Recomendaciones</h3>
               <ul className="space-y-2.5">
                 {p.recommendations.map((r) => (
