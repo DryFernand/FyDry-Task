@@ -2,21 +2,35 @@
 
 Gestor de tareas de la familia FyDry. Misma paleta (vino `#6e2234` + zinc), tipografía (Figtree + Fraunces) y organización que FyDry.
 
+## Cuenta única FyDry
+
+Las cuentas viven **solo en FyDry**. FyDry Task no guarda usuarios ni contraseñas.
+
+```
+Frontend Task ──login/registro/OTP/OAuth──► API FyDry ──► BD FyDry (usuarios)
+      │                                        ▲
+      └──tareas (Bearer token)──► API Task ────┘ valida token (/auth/me, caché 5 min)
+                                     └──► BD Task (solo tareas, por user_id)
+```
+
+- Mismo correo y contraseña en FyDry y FyDry Task; el correo se verifica una sola vez.
+- `JWT_SECRET_KEY` del backend de Task **debe ser igual** a la de FyDry.
+- En FyDry hay que permitir el origen de Task en `CORS_ORIGINS`.
+- Google/GitHub: registrar `https://<dominio-task>/auth/callback/google` (y `/github`) en las apps OAuth de FyDry.
+
 ## Estado actual
 
-- Landing, registro con OTP por correo, login con bloqueo escalonado, recuperación de contraseña, OAuth Google/GitHub.
-- Panel (`/dashboard`): solo pantalla de inicio vacía. Módulos de tareas por definir.
-
-## Tecnologías
-
-- **Frontend**: Next.js 16, React 19, TypeScript, Tailwind CSS v4, `motion/react`, Lucide.
-- **Backend**: FastAPI, SQLAlchemy 2.0, Alembic, PostgreSQL (Supabase) / SQLite en desarrollo.
+- Landing, registro, login, recuperación de contraseña y OAuth (vía API de FyDry).
+- Panel (`/dashboard`): pantalla de inicio vacía. Módulos de tareas por definir.
 
 ## Desarrollo local
 
-Puertos distintos a FyDry (3000/8000) para correr ambos a la vez.
+Puertos: FyDry API `8000`, Task API `8001`, Task web `3001`.
 
-### Backend (http://localhost:8001)
+### Backend FyDry (en el repo FyDry, puerto 8000)
+Su `CORS_ORIGINS` debe incluir `http://localhost:3001`.
+
+### Backend Task (http://localhost:8001)
 ```bash
 cd backend
 python -m venv venv
@@ -24,12 +38,12 @@ python -m venv venv
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8001
 ```
-Sin SMTP configurado, los códigos OTP se imprimen en la consola del backend.
+Self-check: `python tests/check_fydry_auth.py`
 
-### Frontend (http://localhost:3001)
+### Frontend Task (http://localhost:3001)
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
-Variables: ver `frontend/.env.local.example` y `backend/.env.example`.
+Variables: `frontend/.env.local.example` y `backend/.env.example`.

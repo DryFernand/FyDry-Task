@@ -50,7 +50,8 @@ export default function DashboardLayout() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 3500);
       try {
-        const res = await apiRequest("/auth/me", {
+        // El backend de Task valida el token con FyDry
+        const res = await apiRequest("/me", {
           method: "GET",
           headers: { Authorization: `Bearer ${token}` },
           signal: controller.signal,

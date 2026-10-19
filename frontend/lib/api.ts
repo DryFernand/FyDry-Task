@@ -1,5 +1,10 @@
+/** API de FyDry Task (tareas). */
 export const getApiBase = () =>
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001/api/v1";
+
+/** API de FyDry: las cuentas (login, registro, OTP, OAuth) son compartidas con FyDry. */
+export const getAuthApiBase = () =>
+  process.env.NEXT_PUBLIC_AUTH_API_URL || "http://localhost:8000/api/v1";
 
 /** Convierte el error del backend (FastAPI) en un mensaje legible. */
 export function apiErrorMessage(data: unknown, status: number): string {
@@ -14,8 +19,8 @@ export function apiErrorMessage(data: unknown, status: number): string {
   return "No se pudo completar la solicitud. Intenta de nuevo.";
 }
 
-export async function apiRequest(endpoint: string, options: RequestInit = {}) {
-  const url = `${getApiBase()}${endpoint.startsWith("/") ? endpoint : `/${endpoint}`}`;
+export async function apiRequest(endpoint: string, options: RequestInit = {}, base: string = getApiBase()) {
+  const url = `${base}${endpoint.startsWith("/") ? endpoint : `/${endpoint}`}`;
   const defaultHeaders: Record<string, string> = {
     "Content-Type": "application/json",
   };

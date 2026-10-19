@@ -104,7 +104,7 @@ export default function RegisterForm({
           Crea tu cuenta gratis
         </h2>
         <p className="text-xs text-zinc-500 mt-1.5">
-          Empieza a organizar tus tareas y recupera tu paz mental hoy mismo.
+          Una sola cuenta FyDry para FyDry y FyDry Task. Si ya tienes una, inicia sesión.
         </p>
       </div>
 
@@ -291,7 +291,7 @@ export default function RegisterForm({
               className="rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900 mt-0.5"
             />
             <span className="text-[11px] leading-tight">
-              Acepto los <a href="#" className="underline text-zinc-900">Términos de Servicio</a> y la <a href="#" className="underline text-zinc-900">Política de Privacidad</a> de FyDry Task.
+              Acepto los <a href="#" className="underline text-zinc-900">Términos de Servicio</a> y la <a href="#" className="underline text-zinc-900">Política de Privacidad</a> de FyDry.
             </span>
           </label>
         </div>

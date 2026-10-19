@@ -2,7 +2,8 @@ from typing import List, Union, Optional
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-DEV_JWT_SECRET = "fydry_task_dev_only_jwt_secret_no_usar_en_produccion"
+# Igual al de desarrollo de FyDry: en local los tokens de FyDry validan aquí sin configurar nada.
+DEV_JWT_SECRET = "fydry_dev_only_jwt_secret_no_usar_en_produccion"
 
 
 class Settings(BaseSettings):
@@ -29,41 +30,20 @@ class Settings(BaseSettings):
             return v
         raise ValueError(v)
 
-    # JWT & Security
+    # Cuentas centralizadas en FyDry: su API emite los tokens y JWT_SECRET_KEY debe ser la MISMA que la de FyDry.
+    FYDRY_API_URL: str = "http://localhost:8000/api/v1"
     JWT_SECRET_KEY: str = DEV_JWT_SECRET
     JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days session
-    OTP_EXPIRE_MINUTES: int = 10
-    OTP_MAX_ATTEMPTS: int = 5
+    # Cada cuánto se reconfirma con FyDry que la sesión sigue válida
+    AUTH_CACHE_SECONDS: int = 300
 
     @property
     def is_production(self) -> bool:
         return self.ENVIRONMENT.lower() == "production"
 
-    # Database Configuration (Supabase PostgreSQL)
+    # Base de datos propia de FyDry Task (solo tareas; sin usuarios ni contraseñas)
     DATABASE_URL: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/postgres"
     DATABASE_POOLER_URL: Optional[str] = None
-
-    # Supabase Client Credentials
-    SUPABASE_URL: str = ""
-    SUPABASE_ANON_KEY: str = ""
-    SUPABASE_SERVICE_ROLE_KEY: str = ""
-    SUPABASE_JWT_SECRET: str = ""
-
-    # Google SMTP Configuration
-    SMTP_HOST: str = "smtp.gmail.com"
-    SMTP_PORT: int = 587
-    SMTP_USER: str = ""
-    SMTP_PASSWORD: str = ""
-    EMAILS_FROM_EMAIL: str = "noreply@fydrytask.io"
-    EMAILS_FROM_NAME: str = "FyDry Task Seguridad"
-    SMTP_TLS: bool = True
-
-    # OAuth Providers
-    GOOGLE_CLIENT_ID: str = ""
-    GOOGLE_CLIENT_SECRET: str = ""
-    GITHUB_CLIENT_ID: str = ""
-    GITHUB_CLIENT_SECRET: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -72,8 +52,13 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    @field_validator("FYDRY_API_URL")
+    @classmethod
+    def strip_trailing_slash(cls, v: str) -> str:
+        return v.rstrip("/")
+
 
 settings = Settings()
 
 if settings.is_production and settings.JWT_SECRET_KEY == DEV_JWT_SECRET:
-    raise RuntimeError("JWT_SECRET_KEY debe configurarse en producción.")
+    raise RuntimeError("JWT_SECRET_KEY debe configurarse en producción (la misma de FyDry).")

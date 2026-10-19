@@ -1,4 +1,8 @@
-import { apiRequest } from "./api";
+import { apiRequest as baseRequest, getAuthApiBase } from "./api";
+
+// Todas las llamadas de cuenta van a FyDry (cuenta única para la familia FyDry).
+const apiRequest = (endpoint: string, options: RequestInit = {}) =>
+  baseRequest(endpoint, options, getAuthApiBase());
 
 export async function apiRegister(fullName: string, email: string, password: string) {
   return apiRequest("/auth/register", {

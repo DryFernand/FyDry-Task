@@ -106,7 +106,7 @@ export default function LoginForm({
           Bienvenido de nuevo
         </h2>
         <p className="text-xs text-zinc-500 mt-1.5">
-          Ingresa a tu cuenta para continuar organizando tus tareas.
+          Usa tu cuenta FyDry para continuar organizando tus tareas.
         </p>
       </div>
 
