@@ -121,7 +121,7 @@ export default function ForgotPasswordForm({
         setErrorMsg(res.error || "No se pudo procesar la solicitud.");
       }
     } catch {
-      setStep("verify-otp");
+      setErrorMsg("No se pudo conectar con el servidor. Intenta de nuevo.");
     } finally {
       setIsLoading(false);
     }
@@ -147,7 +147,7 @@ export default function ForgotPasswordForm({
         setErrorMsg(res.error || "El código ingresado es incorrecto o ha expirado.");
       }
     } catch {
-      setStep("new-password");
+      setErrorMsg("No se pudo conectar con el servidor. Intenta de nuevo.");
     } finally {
       setIsLoading(false);
     }
@@ -199,7 +199,7 @@ export default function ForgotPasswordForm({
         setErrorMsg(res.error || "No se pudo actualizar la contraseña.");
       }
     } catch {
-      setStep("success");
+      setErrorMsg("No se pudo conectar con el servidor. Intenta de nuevo.");
     } finally {
       setIsLoading(false);
     }

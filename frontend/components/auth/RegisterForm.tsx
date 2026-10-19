@@ -79,8 +79,7 @@ export default function RegisterForm({
         setErrorMsg(res.error || "No se pudo registrar la cuenta.");
       }
     } catch {
-      // Fallback a OTP en modo preview
-      onSwitchView("verify-otp");
+      setErrorMsg("No se pudo conectar con el servidor. Intenta de nuevo.");
     } finally {
       setIsLoading(false);
     }

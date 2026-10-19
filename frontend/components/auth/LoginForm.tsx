@@ -74,13 +74,7 @@ export default function LoginForm({
         setErrorMsg(res.error || "Credenciales incorrectas.");
       }
     } catch {
-      // Fallback interactivo si el backend está desconectado
-      if (password.toLowerCase() === "error") {
-        onFailedAttempt();
-        setErrorMsg(`Credenciales incorrectas. Te quedan ${maxAttempts - failedAttempts - 1} intento(s).`);
-      } else {
-        onSwitchView("verify-otp");
-      }
+      setErrorMsg("No se pudo conectar con el servidor. Intenta de nuevo.");
     } finally {
       setIsLoading(false);
     }

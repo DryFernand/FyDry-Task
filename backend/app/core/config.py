@@ -1,6 +1,7 @@
-from typing import List, Union, Optional
+import json
+from typing import Annotated, List, Union, Optional
 from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # Igual al de desarrollo de FyDry: en local los tokens de FyDry validan aquí sin configurar nada.
 DEV_JWT_SECRET = "fydry_dev_only_jwt_secret_no_usar_en_produccion"
@@ -14,7 +15,8 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:3001"
 
     # CORS Configuration
-    CORS_ORIGINS: List[str] = [
+    # NoDecode: acepta "a,b" además de JSON; sin esto un valor con comas tumba el arranque
+    CORS_ORIGINS: Annotated[List[str], NoDecode] = [
         "http://localhost:3001",
         "http://127.0.0.1:3001",
     ]
@@ -23,10 +25,11 @@ class Settings(BaseSettings):
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
-    def assemble_cors_origins(cls, v: Union[str, List[str]]) -> Union[List[str], str]:
-        if isinstance(v, str) and not v.startswith("["):
-            return [i.strip() for i in v.split(",")]
-        elif isinstance(v, (list, str)):
+    def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
+        if isinstance(v, str):
+            v = v.strip()
+            return json.loads(v) if v.startswith("[") else [i.strip() for i in v.split(",") if i.strip()]
+        if isinstance(v, list):
             return v
         raise ValueError(v)
 
@@ -40,6 +43,18 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.ENVIRONMENT.lower() == "production"
+
+    # Perfil con IA (proveedor compatible con OpenAI, el mismo de FyDry)
+    AI_API_KEY: str = ""
+    AI_BASE_URL: str = "https://api.openai.com/v1"
+    AI_MODEL: str = "gpt-4o-mini"
+
+    # Web Push (generar con: python -m app.scripts.vapid)
+    VAPID_PUBLIC_KEY: str = ""
+    VAPID_PRIVATE_KEY: str = ""
+    VAPID_SUBJECT: str = "mailto:soporte@fydry.app"
+    # Protege /cron/notifications (Vercel Cron envía "Authorization: Bearer <CRON_SECRET>")
+    CRON_SECRET: str = ""
 
     # Base de datos propia de FyDry Task (solo tareas; sin usuarios ni contraseñas)
     DATABASE_URL: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/postgres"

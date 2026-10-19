@@ -1,61 +1,39 @@
-// Service Worker para FyDry — Notificaciones Push en PC y Teléfono Móvil
-const CACHE_NAME = "fydry-cache-v1";
+// Service Worker de FyDry Task — notificaciones push con la app cerrada
+self.addEventListener("install", () => self.skipWaiting());
+self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
 
-self.addEventListener("install", (event) => {
-  self.skipWaiting();
-});
-
-self.addEventListener("activate", (event) => {
-  event.waitUntil(self.clients.claim());
-});
-
-// Escuchar eventos push en segundo plano con la web cerrada
 self.addEventListener("push", (event) => {
-  let data = {
-    title: "FyDry — Alerta Financiera",
-    body: "Tienes un nuevo movimiento o alerta pendiente de revisar.",
-    icon: "/logo_negro.png",
-    badge: "/logo_negro.png",
-  };
-
+  let data = { title: "FyDry Task", body: "Tienes un aviso pendiente.", url: "/dashboard" };
   if (event.data) {
     try {
-      const parsed = event.data.json();
-      data = { ...data, ...parsed };
+      data = { ...data, ...event.data.json() };
     } catch {
       data.body = event.data.text();
     }
   }
-
   event.waitUntil(
     self.registration.showNotification(data.title, {
       body: data.body,
-      icon: data.icon || "/logo_negro.png",
-      badge: data.badge || "/logo_negro.png",
-      vibrate: [200, 100, 200],
-      tag: data.tag || `fydry-alert-${Date.now()}`,
-      data: { url: "/" },
+      icon: "/icon-192.png",
+      badge: "/icon-192.png",
+      tag: data.tag,
+      data: { url: data.url },
     })
   );
 });
 
-// Al tocar la notificación, enfocar la app o abrirla
+// Al tocar el aviso: enfoca una pestaña abierta de la app o abre la sección indicada
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-
-  const urlToOpen = new URL("/", self.location.origin).href;
-
+  const url = new URL(event.notification.data?.url || "/dashboard", self.location.origin).href;
   event.waitUntil(
-    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windowClients) => {
-      for (let i = 0; i < windowClients.length; i++) {
-        const client = windowClients[i];
-        if (client.url === urlToOpen && "focus" in client) {
-          return client.focus();
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if (client.url.startsWith(self.location.origin) && "navigate" in client) {
+          return client.navigate(url).then((c) => c && c.focus());
         }
       }
-      if (self.clients.openWindow) {
-        return self.clients.openWindow(urlToOpen);
-      }
+      return self.clients.openWindow(url);
     })
   );
 });
