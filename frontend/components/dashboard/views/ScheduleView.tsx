@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { AlertTriangle, Archive, ArchiveRestore, Award, Copy, GraduationCap, History, MapPin, MoreHorizontal, Pencil, Plus, Trash2, User } from "lucide-react";
 import { useDash } from "../DashContext";
-import { AcademicModal, GradesPanel } from "../Grades";
-import { api, formatDay, hoursLabel, PERIOD_META, Schedule, Subject, todayISO, WEEKDAY_LONG, WEEKDAY_SHORT } from "@/lib/tasks";
+import { GradesPanel, ProgramModal } from "../Grades";
+import { api, formatDay, hoursLabel, PERIOD_META, Program, Schedule, Subject, todayISO, WEEKDAY_LONG, WEEKDAY_SHORT } from "@/lib/tasks";
 
 const HOUR_PX = 52;
 const toMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
@@ -189,13 +189,17 @@ function SubjectCard({ m }: { m: Subject }) {
 }
 
 export default function ScheduleView() {
-  const { schedules, actions } = useDash();
+  const { schedules: all, programs, actions } = useDash();
   const today = todayISO();
+  const [programSel, setProgramSel] = useState<string | null>(null);
+  const program = programs.find((p) => p.id === programSel) ?? programs[0];
+  const schedules = all.filter((s) => !program || s.program_id === program.id);
   const visible = schedules.filter((s) => !s.is_archived);
   const archived = schedules.filter((s) => s.is_archived);
   const [selected, setSelected] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
-  const [academicOpen, setAcademicOpen] = useState(false);
+  // undefined = cerrado, null = carrera nueva
+  const [programEdit, setProgramEdit] = useState<Program | null | undefined>(undefined);
   const current = schedules.find((s) => s.id === selected) ?? visible.find((s) => s.start_date <= today && today <= s.end_date) ?? visible[0] ?? archived[0];
 
   return (
@@ -206,17 +210,32 @@ export default function ScheduleView() {
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-zinc-950">Tus clases</h1>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => setAcademicOpen(true)} className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-2xl border border-zinc-200 bg-white text-xs font-semibold text-zinc-700 hover:bg-zinc-50 cursor-pointer">
-            <Award className="w-3.5 h-3.5 text-amber-600" /> Historial académico
+          <button type="button" onClick={() => setProgramEdit(program)} disabled={!program} title="Pénsum, metas de honores, historial y escala de notas" className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-2xl border border-zinc-200 bg-white text-xs font-semibold text-zinc-700 hover:bg-zinc-50 cursor-pointer">
+            <Award className="w-3.5 h-3.5 text-amber-600" /> Carrera e historial
           </button>
-          <button type="button" onClick={actions.newSchedule} title="Registra un cuatrimestre o semestre pasado con sus materias y notas" className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-2xl border border-zinc-200 bg-white text-xs font-semibold text-zinc-700 hover:bg-zinc-50 cursor-pointer">
+          <button type="button" onClick={() => actions.newSchedule(program?.id)} title="Registra un cuatrimestre o semestre pasado con sus materias y notas" className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-2xl border border-zinc-200 bg-white text-xs font-semibold text-zinc-700 hover:bg-zinc-50 cursor-pointer">
             <History className="w-3.5 h-3.5" /> Periodo anterior
           </button>
-          <button type="button" onClick={actions.newSchedule} className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-2xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold cursor-pointer">
+          <button type="button" onClick={() => actions.newSchedule(program?.id)} className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-2xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold cursor-pointer">
             <Plus className="w-3.5 h-3.5" /> Nuevo horario
           </button>
         </div>
       </div>
+
+      {programs.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Carreras">
+          <GraduationCap className="w-4 h-4 text-zinc-400 mr-0.5" aria-hidden="true" />
+          {programs.map((p) => (
+            <button key={p.id} type="button" role="tab" aria-selected={program?.id === p.id} onClick={() => { setProgramSel(p.id); setSelected(null); }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold border cursor-pointer ${program?.id === p.id ? "bg-emerald-700 border-emerald-700 text-white" : "bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-50"}`}>
+              {p.name}{p.institution && <span className="font-normal opacity-80"> · {p.institution}</span>}
+            </button>
+          ))}
+          <button type="button" onClick={() => setProgramEdit(null)} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-emerald-700 hover:bg-emerald-50 cursor-pointer">
+            <Plus className="w-3.5 h-3.5" /> Carrera
+          </button>
+        </div>
+      )}
 
       {schedules.length === 0 ? (
         <div className="rounded-3xl border border-dashed border-zinc-300 bg-white p-10 text-center">
@@ -257,7 +276,7 @@ export default function ScheduleView() {
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${statusOf(current, today).className}`}>{statusOf(current, today).label}</span>
                   </div>
                   <p className="text-xs text-zinc-500 mt-0.5">
-                    {[current.institution, PERIOD_META[current.period_type].label, `${formatDay(current.start_date, { day: "numeric", month: "short", year: "numeric" })} – ${formatDay(current.end_date, { day: "numeric", month: "short", year: "numeric" })}`].filter(Boolean).join(" · ")}
+                    {[program?.institution, PERIOD_META[current.period_type].label, `${formatDay(current.start_date, { day: "numeric", month: "short", year: "numeric" })} – ${formatDay(current.end_date, { day: "numeric", month: "short", year: "numeric" })}`].filter(Boolean).join(" · ")}
                   </p>
                 </div>
                 <div className="flex items-center gap-4">
@@ -293,7 +312,7 @@ export default function ScheduleView() {
           )}
         </>
       )}
-      <AcademicModal open={academicOpen} onClose={() => setAcademicOpen(false)} />
+      <ProgramModal program={programEdit} onClose={() => setProgramEdit(undefined)} />
     </div>
   );
 }

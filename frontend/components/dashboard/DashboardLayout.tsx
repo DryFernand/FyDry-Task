@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { AlertCircle, BarChart3, BrainCircuit, CalendarDays, CheckCircle2, CheckSquare, GraduationCap, Loader2, LogOut, Menu, Plus, Repeat, Settings, Sun, Trophy, X } from "lucide-react";
 import { apiRequest } from "@/lib/api";
-import { api, Category, Challenge, Schedule, Subject, todayISO } from "@/lib/tasks";
+import { api, Category, Challenge, Program, Schedule, Subject, todayISO } from "@/lib/tasks";
 import { registerServiceWorker } from "@/lib/push";
 import { useLanguage } from "@/context/LanguageContext";
 import BrandMark from "@/components/BrandMark";
@@ -128,6 +128,7 @@ export default function DashboardLayout() {
   const [challengeTarget, setChallengeTarget] = useState<ChallengeFormTarget | null>(null);
   const [resultTarget, setResultTarget] = useState<Challenge | null>(null);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
+  const [programs, setPrograms] = useState<Program[]>([]);
   const [scheduleTarget, setScheduleTarget] = useState<ScheduleFormTarget | null>(null);
   const [subjectTarget, setSubjectTarget] = useState<SubjectFormTarget | null>(null);
   const [subjectDetail, setSubjectDetail] = useState<Subject | null>(null);
@@ -148,6 +149,7 @@ export default function DashboardLayout() {
   const closeSettings = useCallback(() => setIsSettingsOpen(false), []);
   const loadSchedules = useCallback(() => {
     api.schedules().then(setSchedules).catch((e) => onError(e.message));
+    api.programs().then(setPrograms).catch((e) => onError(e.message));
   }, [onError]);
   const reloadSchedules = useCallback(() => {
     loadSchedules();
@@ -239,6 +241,7 @@ export default function DashboardLayout() {
       categories,
       catOf: (id) => categories.find((c) => c.id === id),
       schedules,
+      programs,
       subjectOf: (id) => (id ? schedules.flatMap((s) => s.subjects).find((m) => m.id === id) : undefined),
       reloadSchedules,
       refreshKey,
@@ -256,7 +259,7 @@ export default function DashboardLayout() {
         openClose: (date) => setCloseDate(date),
         create: (kind, date) =>
           kind === "task" ? setFormTarget({ kind: "new", date }) : kind === "habit" ? setHabitTarget({ kind: "new", mode: "building", date }) : setChallengeTarget({ kind: "new", date }),
-        newSchedule: () => setScheduleTarget({ kind: "new" }),
+        newSchedule: (programId) => setScheduleTarget({ kind: "new", programId }),
         editSchedule: (schedule) => setScheduleTarget({ kind: "edit", schedule }),
         duplicateSchedule: (schedule) => setScheduleTarget({ kind: "duplicate", schedule }),
         newSubject: (scheduleId) => setSubjectTarget({ kind: "new", scheduleId }),
@@ -264,7 +267,7 @@ export default function DashboardLayout() {
         openSubject: (subject) => setSubjectDetail(subject),
       },
     }),
-    [categories, schedules, reloadSchedules, refreshKey, bump, onError, onInfo]
+    [categories, schedules, programs, reloadSchedules, refreshKey, bump, onError, onInfo]
   );
 
   if (isLoadingAuth) {

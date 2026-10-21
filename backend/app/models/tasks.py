@@ -201,7 +201,7 @@ class Schedule(Base, TimestampMixin):
     id = Column(String(36), primary_key=True, default=_uuid)
     user_id = Column(String(36), nullable=False, index=True)
     name = Column(String(120), nullable=False)
-    institution = Column(String(120), nullable=True)
+    program_id = Column(String(36), ForeignKey("programs.id", ondelete="CASCADE"), nullable=True, index=True)
     period_type = Column(String(16), nullable=False, default="cuatrimestral")
     start_date = Column(Date, nullable=False)
     end_date = Column(Date, nullable=False)
@@ -261,11 +261,21 @@ DEFAULT_GRADE_SCALE = [
 ]
 
 
-class AcademicSettings(Base, TimestampMixin):
-    """Escala de notas del usuario y su historial previo (opción 'resumen manual')."""
-    __tablename__ = "academic_settings"
+DEFAULT_HONORS = [
+    {"name": "Summa Cum Laude", "min": 3.8},
+    {"name": "Magna Cum Laude", "min": 3.5},
+    {"name": "Cum Laude", "min": 3.2},
+]
 
-    user_id = Column(String(36), primary_key=True)
+
+class Program(Base, TimestampMixin):
+    """Carrera: agrupa los horarios de una institución con su escala, historial, pénsum y metas."""
+    __tablename__ = "programs"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    user_id = Column(String(36), nullable=False, index=True)
+    name = Column(String(120), nullable=False)
+    institution = Column(String(120), nullable=True)
     scale = Column(JSON, nullable=False, default=lambda: [dict(x) for x in DEFAULT_GRADE_SCALE])
     pass_min = Column(Float, nullable=False, default=70.0)
     # Historial anterior a lo registrado en la app (opcional)
@@ -274,3 +284,14 @@ class AcademicSettings(Base, TimestampMixin):
     prior_courses = Column(Integer, nullable=True)
     prior_passed = Column(Integer, nullable=True)
     prior_failed = Column(Integer, nullable=True)
+    prior_periods = Column(Integer, nullable=True)
+    # Pénsum
+    total_credits = Column(Integer, nullable=True)
+    total_subjects = Column(Integer, nullable=True)
+    transfer_credits = Column(Integer, nullable=True)  # convalidados: avanzan el pénsum, no cuentan en el índice
+    # Metas y requisitos de honores
+    honors = Column(JSON, nullable=False, default=lambda: [dict(x) for x in DEFAULT_HONORS])
+    target_index = Column(Float, nullable=True)
+    probation_min = Column(Float, nullable=True, default=2.0)  # por debajo = condición de prueba
+    max_periods = Column(Integer, nullable=True)
+    min_institution_pct = Column(Integer, nullable=True, default=50)

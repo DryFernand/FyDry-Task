@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext } from "react";
-import { Category, Challenge, Habit, HabitKind, Schedule, Subject, Task } from "@/lib/tasks";
+import { Category, Challenge, Habit, HabitKind, Program, Schedule, Subject, Task } from "@/lib/tasks";
 import { ItemKind } from "./ItemRows";
 
 export interface DashActions {
@@ -15,7 +15,7 @@ export interface DashActions {
   openClose: (date: string) => void;
   /** "+ Agregar" de un día: abre el formulario del tipo elegido con ese día. */
   create: (kind: ItemKind, date: string) => void;
-  newSchedule: () => void;
+  newSchedule: (programId?: string) => void;
   editSchedule: (s: Schedule) => void;
   duplicateSchedule: (s: Schedule) => void;
   newSubject: (scheduleId: string) => void;
@@ -28,6 +28,8 @@ export interface Dash {
   catOf: (id: string | null) => Category | undefined;
   /** Horarios del usuario (activos y archivados) y sus materias. */
   schedules: Schedule[];
+  /** Carreras: agrupan horarios; la primera es la principal. */
+  programs: Program[];
   subjectOf: (id: string | null) => Subject | undefined;
   reloadSchedules: () => void;
   refreshKey: number;

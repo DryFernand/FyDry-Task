@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowLeft, Award, BarChart3, ChevronRight, Flame, GraduationCap, Lightbulb, ListChecks, Loader2, Repeat, Repeat2, Target, Trophy } from "lucide-react";
+import { ArrowLeft, Award, BarChart3, ChevronRight, Flag, Flame, GraduationCap, Lightbulb, ListChecks, Loader2, Repeat, Repeat2, ShieldCheck, Target, Trophy } from "lucide-react";
+import { useDash } from "../DashContext";
 import { statusBadge } from "../Grades";
 import { useLoad } from "../useLoad";
-import { addDays, Analytics, api, CHALLENGE_META, ChallengeAnalytics, ClassAnalytics, formatDay, GradesAnalytics, HabitAnalytics, STATUS_META, todayISO, weekStart } from "@/lib/tasks";
+import { addDays, Analytics, api, CHALLENGE_META, ChallengeAnalytics, ClassAnalytics, formatDay, GradesAnalytics, GradesPlan, HabitAnalytics, PlanTarget, STATUS_META, TargetStatus, todayISO, weekStart } from "@/lib/tasks";
 
 const BRAND = "#6e2234";
 const SLOT_LABEL = { manana: "Mañana (antes de 12)", tarde: "Tarde (12–18)", noche: "Noche (desde 18)", sin_hora: "Sin hora" } as const;
@@ -70,7 +71,7 @@ const SECTIONS: { key: Section; title: string; desc: string; icon: typeof BarCha
   { key: "habits", title: "Hábitos", desc: "Constancia por hábito y hábitos consolidados", icon: Repeat, tone: "text-emerald-700 bg-emerald-50" },
   { key: "challenges", title: "Retos", desc: "Logrados, parciales y no logrados", icon: Trophy, tone: "text-amber-700 bg-amber-50" },
   { key: "classes", title: "Clases", desc: "Asistencia y entregas por materia", icon: GraduationCap, tone: "text-sky-700 bg-sky-50" },
-  { key: "grades", title: "Notas", desc: "Índice, promedio, letras, aprobadas y reprobadas", icon: Award, tone: "text-amber-700 bg-amber-50" },
+  { key: "grades", title: "Notas y carrera", desc: "Índice, lo que te falta, honores y metas", icon: Award, tone: "text-amber-700 bg-amber-50" },
 ];
 
 /** Pantalla previa: eliges qué análisis ver. */
@@ -108,7 +109,9 @@ export default function AnalyticsView({ refreshKey, onError }: { refreshKey: num
   const [start, end] = rangeOf(range);
   const { data: all, loading } = useLoad<Analytics>(() => api.analytics(start, end), [start, end], refreshKey, onError);
   const [section, setSection] = useState<Section | null>(null);
-  const grades = useLoad<GradesAnalytics>(() => api.gradesAnalytics(), [], refreshKey, onError);
+  const { programs } = useDash();
+  const [programId, setProgramId] = useState<string | null>(null);
+  const grades = useLoad<GradesAnalytics>(() => api.gradesAnalytics(programId), [programId], refreshKey, onError);
   const meta = section ? SECTIONS.find((x) => x.key === section)! : null;
   const hasClasses = !!all && (all.classes.classes > 0 || all.classes.by_subject.length > 0);
   const m = all?.tasks;
@@ -129,10 +132,22 @@ export default function AnalyticsView({ refreshKey, onError }: { refreshKey: num
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-zinc-950">{meta ? meta.title : "¿Qué quieres analizar?"}</h1>
           <p className="text-xs text-zinc-500 mt-0.5">
             {section === "grades"
-              ? "Todo tu historial académico (no depende del periodo)"
+              ? `${grades.data?.program.name ?? "Tu carrera"}${grades.data?.program.institution ? ` · ${grades.data.program.institution}` : ""} · todo el historial (no depende del periodo)`
               : `${formatDay(start, { day: "numeric", month: "short" })} – ${formatDay(end, { day: "numeric", month: "short" })}`}
           </p>
         </div>
+        {section === "grades" && programs.length > 1 && (
+          <div className="flex flex-wrap gap-1 p-1 rounded-2xl bg-zinc-100" role="radiogroup" aria-label="Carrera">
+            {programs.map((p, i) => {
+              const on = (programId ?? programs[0].id) === p.id;
+              return (
+                <button key={p.id} type="button" role="radio" aria-checked={on} onClick={() => setProgramId(i === 0 ? null : p.id)} className={`px-3 py-1.5 rounded-xl text-xs font-semibold cursor-pointer ${on ? "bg-white shadow-xs text-zinc-950" : "text-zinc-500"}`}>
+                  {p.name}
+                </button>
+              );
+            })}
+          </div>
+        )}
         <div className={`flex flex-wrap gap-1 p-1 rounded-2xl bg-zinc-100 ${section === "grades" ? "hidden" : ""}`} role="radiogroup" aria-label="Periodo">
           {RANGES.map((r) => (
             <button key={r.key} type="button" role="radio" aria-checked={range === r.key} onClick={() => setRange(r.key)} className={`px-3 py-1.5 rounded-xl text-xs font-semibold cursor-pointer ${range === r.key ? "bg-white shadow-xs text-zinc-950" : "text-zinc-500"}`}>
@@ -397,6 +412,7 @@ function GradesSection({ g }: { g: GradesAnalytics }) {
         <Stat label="Créditos" value={g.credits_passed === null ? String(g.credits_attempted) : `${g.credits_passed} / ${g.credits_attempted}`} sub={`${g.credits_passed === null ? "cursados" : "aprobados / cursados"}${g.in_progress ? ` · ${g.in_progress} materia(s) en curso` : ""}`} />
       </div>
       <Insights items={g.insights} />
+      <CareerPlan p={g.plan} max={maxPoints} />
       {g.subjects.length > 0 && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <Card title="Clasificación por letra" icon={Award}>
@@ -442,5 +458,114 @@ function GradesSection({ g }: { g: GradesAnalytics }) {
         </Card>
       )}
     </>
+  );
+}
+
+const TARGET_META: Record<TargetStatus, { label: string; className: string }> = {
+  asegurado: { label: "Asegurado", className: "bg-green-50 text-green-700 border-green-200" },
+  en_camino: { label: "En camino", className: "bg-green-50 text-green-700 border-green-200" },
+  exigente: { label: "Exigente", className: "bg-amber-50 text-amber-800 border-amber-200" },
+  imposible: { label: "Fuera de alcance", className: "bg-rose-50 text-rose-700 border-rose-200" },
+  descalificado: { label: "No elegible", className: "bg-rose-50 text-rose-700 border-rose-200" },
+  logrado: { label: "Logrado", className: "bg-green-50 text-green-700 border-green-200" },
+  no_alcanzado: { label: "No alcanzado", className: "bg-zinc-100 text-zinc-600 border-zinc-200" },
+  sin_pensum: { label: "Falta el pénsum", className: "bg-zinc-100 text-zinc-600 border-zinc-200" },
+};
+const REQ_ICON = { ok: ["✓", "text-green-700"], fail: ["✗", "text-rose-600"], warn: ["!", "text-amber-700"], unknown: ["?", "text-zinc-400"] } as const;
+
+function TargetCard({ t, max }: { t: PlanTarget; max: number }) {
+  const meta = TARGET_META[t.status];
+  const margin = t.margins.filter((x) => x.credits > 0);
+  return (
+    <div className="p-4 rounded-2xl border border-zinc-200/80 space-y-2">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <div className="text-sm font-bold text-zinc-900">{t.name}</div>
+          <div className="text-[11px] text-zinc-500">índice ≥ {t.min.toFixed(2)}</div>
+        </div>
+        <span className={`px-2 py-0.5 rounded-full border text-[10px] font-semibold whitespace-nowrap ${meta.className}`}>{meta.label}</span>
+      </div>
+      {t.needed !== null && t.status !== "imposible" && (
+        <div className="flex items-baseline gap-3">
+          <div>
+            <div className="text-xl font-bold tabular-nums text-zinc-950">{t.needed.toFixed(2)}</div>
+            <div className="text-[10px] text-zinc-500">índice necesario en lo que falta</div>
+          </div>
+          {t.probability !== null && (
+            <div>
+              <div className="text-xl font-bold tabular-nums text-zinc-950">{t.probability}%</div>
+              <div className="text-[10px] text-zinc-500">probabilidad estimada</div>
+            </div>
+          )}
+        </div>
+      )}
+      {t.needed !== null && t.status !== "imposible" && (
+        <div className="h-2 rounded-full bg-zinc-100 overflow-hidden" title={`Necesitas ${t.needed.toFixed(2)} de ${max.toFixed(2)}`}>
+          <div className="h-full rounded-r-[4px]" style={{ width: `${Math.max(Math.min(t.needed / max, 1) * 100, 2)}%`, background: BRAND }} />
+        </div>
+      )}
+      {t.status === "imposible" && t.final_if_all !== null && <p className="text-xs text-zinc-600">Aun sacando todo {"A"} llegarías a {t.final_if_all.toFixed(2)}.</p>}
+      {t.status === "descalificado" && <p className="text-xs text-rose-700">No cumples un requisito de honores (abajo).</p>}
+      {t.status !== "descalificado" && t.status !== "imposible" && t.margins.length > 0 && (
+        <p className="text-xs text-zinc-600 leading-relaxed">
+          {margin.length
+            ? <>Margen: hasta {margin.map((x, i) => <span key={x.letter}>{i > 0 && " o "}<b>{x.credits} créditos en {x.letter}</b>{x.subjects !== null && ` (≈${x.subjects} materia${x.subjects === 1 ? "" : "s"})`}</span>)}, con todo lo demás en la nota más alta.</>
+            : "Sin margen: necesitas la nota más alta en todo lo que falta."}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function CareerPlan({ p, max }: { p: GradesPlan; max: number }) {
+  if (p.total_credits === null) {
+    return (
+      <Card title="Tu carrera" icon={Flag}>
+        <p className="text-xs text-zinc-600">Agrega los créditos y materias de tu pénsum en <b>Horario → Carrera e historial</b> para ver cuánto te falta, qué índice necesitas para graduarte con honores o llegar a tu índice deseado, y tu margen.</p>
+      </Card>
+    );
+  }
+  const left = p.credits_remaining ?? 0;
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <Card title="Tu carrera" icon={Flag}>
+        <div className="flex items-baseline justify-between">
+          <span className="text-2xl font-bold tabular-nums text-zinc-950">{Math.round((p.progress ?? 0) * 100)}%</span>
+          <span className="text-[11px] text-zinc-500">{p.credits_done + p.transfer_credits} de {p.total_credits} créditos</span>
+        </div>
+        <div className="mt-2 h-2.5 rounded-full bg-zinc-100 overflow-hidden" title={`${Math.round((p.progress ?? 0) * 100)}% del pénsum`}>
+          <div className="h-full rounded-r-[4px]" style={{ width: `${Math.max((p.progress ?? 0) * 100, 2)}%`, background: BRAND }} />
+        </div>
+        <dl className="mt-3 grid grid-cols-2 gap-y-2 text-xs">
+          <dt className="text-zinc-500">Créditos por cursar</dt><dd className="text-right font-semibold tabular-nums">{left}</dd>
+          {p.subjects_remaining !== null && <><dt className="text-zinc-500">Materias por aprobar</dt><dd className="text-right font-semibold tabular-nums">{p.subjects_remaining}</dd></>}
+          {p.credits_in_progress > 0 && <><dt className="text-zinc-500">En curso ahora</dt><dd className="text-right font-semibold tabular-nums">{p.credits_in_progress} cr</dd></>}
+          {p.transfer_credits > 0 && <><dt className="text-zinc-500">Convalidados</dt><dd className="text-right font-semibold tabular-nums">{p.transfer_credits} cr</dd></>}
+          <dt className="text-zinc-500">Periodos cursados</dt><dd className="text-right font-semibold tabular-nums">{p.periods_used}{p.max_periods ? ` de ${p.max_periods}` : ""}</dd>
+          {p.periods_left !== null && <><dt className="text-zinc-500">Periodos a tu ritmo</dt><dd className="text-right font-semibold tabular-nums">{p.periods_left}</dd></>}
+        </dl>
+      </Card>
+      <Card title="Metas de índice" icon={Target} className="lg:col-span-2">
+        {p.targets.length === 0 ? (
+          <p className="text-xs text-zinc-500">Agrega niveles de honor o un índice deseado en la carrera.</p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{p.targets.map((t) => <TargetCard key={`${t.kind}-${t.name}`} t={t} max={max} />)}</div>
+        )}
+        {p.expected_points !== null && left > 0 && (
+          <p className="mt-3 text-[11px] text-zinc-400">La probabilidad es una estimación con tu rendimiento por materia (promedio {p.expected_points.toFixed(2)} puntos) y su variación; no es una garantía.</p>
+        )}
+      </Card>
+      <Card title="Requisitos de honores" icon={ShieldCheck} className="lg:col-span-3">
+        <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+          {p.requirements.map((r) => (
+            <li key={r.key} className="flex gap-2 text-xs">
+              <span className={`w-4 text-center font-bold ${REQ_ICON[r.status][1]}`} aria-label={r.status}>{REQ_ICON[r.status][0]}</span>
+              <span><b className="text-zinc-800">{r.label}.</b> <span className="text-zinc-500">{r.detail}</span></span>
+            </li>
+          ))}
+        </ul>
+        <p className="mt-3 text-[11px] text-zinc-400">{p.eligible ? "Hasta ahora cumples los requisitos conocidos (los marcados con ? no se pueden verificar)." : "Con lo marcado en rojo pierdes los honores; tu índice deseado se sigue calculando."}</p>
+      </Card>
+    </div>
   );
 }

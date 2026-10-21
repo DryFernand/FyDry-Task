@@ -47,7 +47,7 @@ assert suggested_end(date(2026, 9, 7), "cuatrimestral") == date(2027, 1, 6)
 assert suggested_end(date(2026, 1, 31), "bimestral") == date(2026, 3, 30)
 assert suggested_end(date(2026, 1, 1), "personalizado") is None
 assert c.post(f"{API}/schedules", params=T, json={"name": "x", "period_type": "personalizado", "start_date": D(0)}).status_code == 422
-sch = ok(c.post(f"{API}/schedules", params=T, json={"name": "Cuatrimestre sep-dic", "institution": "UASD", "period_type": "cuatrimestral", "start_date": "2026-09-07"}), 201)
+sch = ok(c.post(f"{API}/schedules", params=T, json={"name": "Cuatrimestre sep-dic", "period_type": "cuatrimestral", "start_date": "2026-09-07"}), 201)
 assert sch["end_date"] == "2027-01-06"
 
 # --- Materias con sesiones; choques entre clases
@@ -139,7 +139,7 @@ db.close()
 # --- Duplicar para el siguiente periodo (sin asistencia) y archivar
 dup = ok(c.post(f"{API}/schedules/{sch['id']}/duplicate", params=T, json={"name": "Cuatrimestre ene-abr", "period_type": "cuatrimestral", "start_date": "2027-01-11"}), 201)
 assert dup["end_date"] == "2027-05-10" and sorted(s["name"] for s in dup["subjects"]) == ["Cálculo Integral", "Física"]
-assert dup["institution"] == "UASD"
+assert dup["program_id"] == sch["program_id"], "la copia queda en la misma carrera"
 assert not ok(c.get(f"{API}/agenda", params={"start": "2027-01-11", "end": "2027-01-17", "today": "2027-01-11"}))["classes"][0]["attendance"]
 # Una clase recién creada no aparece en semanas anteriores a su creación ("sin marcar" falsos)
 new = ok(c.post(f"{API}/schedules/{dup['id']}/subjects", params=T, json={"name": "Nueva", "sessions": [{"weekday": 0, "start_time": "07:00", "end_time": "08:00"}]}), 201)

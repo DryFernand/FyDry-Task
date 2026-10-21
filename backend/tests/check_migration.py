@@ -59,5 +59,32 @@ assert items["i5"] is None
 assert con.execute("SELECT COUNT(*) FROM task_recurrences WHERE is_active = 1").fetchone()[0] == 0
 con.close()
 
+# 0005: la escala, el historial y la institución pasan a una carrera "Mi carrera" por usuario
+run("downgrade", "0004_grades")
+con = sqlite3.connect(db_path)
+con.executescript(f"""
+INSERT INTO schedules (id, user_id, name, institution, period_type, start_date, end_date, is_archived, created_at, updated_at) VALUES
+ ('s1', 'u1', '2026-1', NULL,   'cuatrimestral', '2026-01-05', '2026-04-30', 0, '{now}', '{now}'),
+ ('s2', 'u1', '2026-2', 'ITLA', 'cuatrimestral', '2026-05-04', '2026-08-31', 0, '{now}', '{now}'),
+ ('s3', 'u2', 'Nivel 1', NULL,  'trimestral',    '2026-01-05', '2026-03-31', 0, '{now}', '{now}');
+INSERT INTO academic_settings (user_id, scale, pass_min, prior_index, prior_credits, created_at, updated_at)
+VALUES ('u1', '[{{"letter": "A", "min": 90, "points": 4.0}}, {{"letter": "F", "min": 0, "points": 0.0}}]', 65, 3.1, 24, '{now}', '{now}');
+""")
+con.commit()
+con.close()
+run("upgrade", "head")
+con = sqlite3.connect(db_path)
+progs = {r[0]: r[1:] for r in con.execute("SELECT user_id, name, institution, pass_min, prior_index, prior_credits, id FROM programs")}
+assert progs["u1"][:5] == ("Mi carrera", "ITLA", 65.0, 3.1, 24), progs
+assert progs["u2"][:5] == ("Mi carrera", None, 70.0, None, None), progs
+assert dict(con.execute("SELECT id, program_id FROM schedules")) == {"s1": progs["u1"][5], "s2": progs["u1"][5], "s3": progs["u2"][5]}
+con.close()
+
+run("downgrade", "0004_grades")
+con = sqlite3.connect(db_path)
+assert dict(con.execute("SELECT id, institution FROM schedules")) == {"s1": "ITLA", "s2": "ITLA", "s3": None}
+assert con.execute("SELECT pass_min, prior_index FROM academic_settings WHERE user_id = 'u1'").fetchone() == (65.0, 3.1)
+con.close()
+
 run("downgrade", "0001_tasks")
-print("OK: migración de recurrentes a hábitos")
+print("OK: migraciones de recurrentes a hábitos y de carreras")

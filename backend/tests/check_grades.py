@@ -90,28 +90,96 @@ assert [p["name"] for p in m["pending_grades"]] == ["Química"]
 ok(c.delete(f"{API}/subjects/{sin_nota}"), 204)
 
 # --- Historial manual como punto de partida: (3.5·30 + 41) / 45 = 146/45 = 3.24
-assert c.put(f"{API}/academic/settings", json={"prior_index": 3.5}).status_code == 422, "índice sin créditos"
-assert c.put(f"{API}/academic/settings", json={"prior_courses": 3, "prior_passed": 3, "prior_failed": 1}).status_code == 422
-ok(c.put(f"{API}/academic/settings", json={"prior_index": 3.5, "prior_credits": 30, "prior_courses": 10, "prior_passed": 10, "prior_failed": 0}))
+PID = ok(c.get(f"{API}/programs"))[0]["id"]
+assert p2["program_id"] == PID, "sin carrera, el horario va a la principal"
+assert c.put(f"{API}/programs/{PID}", json={"prior_index": 3.5}).status_code == 422, "índice sin créditos"
+assert c.put(f"{API}/programs/{PID}", json={"prior_courses": 3, "prior_passed": 3, "prior_failed": 1}).status_code == 422
+ok(c.put(f"{API}/programs/{PID}", json={"prior_index": 3.5, "prior_credits": 30, "prior_courses": 10, "prior_passed": 10, "prior_failed": 0}))
 m = ok(c.get(f"{API}/grades/analytics", params=T))
 assert m["cumulative_index"] == 3.24 and m["app_index"] == 2.73, (m["cumulative_index"], m["app_index"])
 assert (m["courses"], m["passed"], m["credits_attempted"]) == (15, 14, 45)
 assert m["credits_passed"] == 43, "sin reprobadas en el historial, sus 30 créditos cuentan como aprobados"
 assert [e["cumulative_index"] for e in m["evolution"]] == [round((105 + 27) / 39, 2), 3.24]
-ok(c.put(f"{API}/academic/settings", json={"prior_failed": 2}))
+ok(c.put(f"{API}/programs/{PID}", json={"prior_failed": 2}))
 assert ok(c.get(f"{API}/grades/analytics", params=T))["credits_passed"] is None, "con reprobadas en el historial no se sabe"
-ok(c.put(f"{API}/academic/settings", json={"prior_index": None, "prior_credits": None, "prior_courses": None, "prior_passed": None, "prior_failed": None}))
+ok(c.put(f"{API}/programs/{PID}", json={"prior_index": None, "prior_credits": None, "prior_courses": None, "prior_passed": None, "prior_failed": None}))
 assert ok(c.get(f"{API}/grades/analytics", params=T))["cumulative_index"] == 2.73
 
 # --- Escala y mínimo editables
-assert c.put(f"{API}/academic/settings", json={"scale": [{"letter": "A", "min": 90, "points": 4}, {"letter": "B", "min": 80, "points": 3}]}).status_code == 422, "falta tramo desde 0"
-assert c.put(f"{API}/academic/settings", json={"scale": [{"letter": "A", "min": 90, "points": 4}, {"letter": "a", "min": 0, "points": 0}]}).status_code == 422, "letras repetidas"
-ok(c.put(f"{API}/academic/settings", json={"pass_min": 65, "scale": [
+assert c.put(f"{API}/programs/{PID}", json={"scale": [{"letter": "A", "min": 90, "points": 4}, {"letter": "B", "min": 80, "points": 3}]}).status_code == 422, "falta tramo desde 0"
+assert c.put(f"{API}/programs/{PID}", json={"scale": [{"letter": "A", "min": 90, "points": 4}, {"letter": "a", "min": 0, "points": 0}]}).status_code == 422, "letras repetidas"
+ok(c.put(f"{API}/programs/{PID}", json={"pass_min": 65, "scale": [
     {"letter": "A", "min": 90, "points": 4}, {"letter": "B", "min": 80, "points": 3}, {"letter": "C", "min": 65, "points": 2}, {"letter": "F", "min": 0, "points": 0}]}))
 m = ok(c.get(f"{API}/grades/analytics", params=T))
 assert m["failed"] == 0 and m["letters"]["C"] == 2, "con mínimo 65 y C desde 65, Inglés I (65) aprueba con C"
 current["u"] = users["b"]
 assert ok(c.get(f"{API}/grades/analytics", params=T))["courses"] == 0
-assert ok(c.get(f"{API}/academic/settings"))["pass_min"] == 70
+assert ok(c.get(f"{API}/programs"))[0]["pass_min"] == 70
+assert c.put(f"{API}/programs/{PID}", json={"name": "Robada"}).status_code == 404
+
+# --- Carrera: lo que falta, metas de honores y requisitos
+# 3 materias de 4 créditos: A, B, A -> 44 puntos-crédito en 12 créditos (3.67). Pénsum 40 créditos / 10 materias.
+current["u"] = CurrentUser(id="uc", email="c@x.com", full_name="Cira")
+CID = ok(c.get(f"{API}/programs"))[0]["id"]
+ok(c.put(f"{API}/programs/{CID}", json={"name": "Software", "institution": "ITLA", "total_credits": 40, "total_subjects": 10, "target_index": 3.0}))
+pc = ok(c.post(f"{API}/schedules", params=T, json={"name": "2026-1", "start_date": "2026-01-05"}), 201)
+for name, g in (("Prog I", 95), ("Redes", 85), ("BD", 95)):
+    grade(subject(pc["id"], name, 4), g)
+pl = ok(c.get(f"{API}/grades/analytics", params=T))["plan"]
+assert (pl["credits_remaining"], pl["subjects_remaining"], pl["periods_left"], pl["progress"]) == (28, 7, 3, 0.3), pl
+assert pl["eligible"] and [r["status"] for r in pl["requirements"]] == ["ok", "ok", "unknown", "ok"], pl["requirements"]
+t = {x["name"]: x for x in pl["targets"]}
+assert list(t) == ["Summa Cum Laude", "Magna Cum Laude", "Cum Laude", "Índice deseado"]
+# Summa: (3.8·40 − 44) / 28 = 3.86 > 3.67 actual; margen 44 + 4·28 − 152 = 4 puntos-crédito -> 4 créditos en B o 2 en C
+assert (t["Summa Cum Laude"]["needed"], t["Summa Cum Laude"]["status"]) == (3.86, "exigente")
+assert [(x["letter"], x["credits"], x["subjects"]) for x in t["Summa Cum Laude"]["margins"]] == [("B", 4, 1), ("C", 2, 0)], "D no aprueba: no cuenta como margen"
+assert (t["Magna Cum Laude"]["needed"], t["Magna Cum Laude"]["status"]) == (3.43, "en_camino")
+assert t["Magna Cum Laude"]["margins"][0]["credits"] == 16
+assert t["Índice deseado"]["needed"] == 2.71
+probs = [t[k]["probability"] for k in ("Summa Cum Laude", "Magna Cum Laude", "Cum Laude", "Índice deseado")]
+assert probs == sorted(probs) and 10 < probs[0] < 35 and probs[-1] > 90, probs
+assert any("Te faltan 28 créditos (7 materias)" in s for s in ok(c.get(f"{API}/grades/analytics", params=T))["insights"])
+
+# Una F descalifica los honores, pero el índice deseado se sigue calculando
+f = subject(pc["id"], "Física", 4)
+grade(f, 50)
+m = ok(c.get(f"{API}/grades/analytics", params=T))
+t = {x["name"]: x for x in m["plan"]["targets"]}
+assert not m["plan"]["eligible"] and m["plan"]["requirements"][0]["status"] == "fail"
+assert t["Cum Laude"]["status"] == "descalificado" and t["Cum Laude"]["probability"] == 0
+assert (t["Índice deseado"]["needed"], t["Índice deseado"]["status"]) == (3.14, "exigente"), t["Índice deseado"]  # (3·44 − 44) / 28
+ok(c.delete(f"{API}/subjects/{f}"), 204)
+
+# Condición de prueba, convalidaciones y tiempo máximo
+ok(c.put(f"{API}/programs/{CID}", json={"probation_min": 3.7}))
+assert ok(c.get(f"{API}/grades/analytics", params=T))["plan"]["requirements"][1]["status"] == "fail"
+ok(c.put(f"{API}/programs/{CID}", json={"probation_min": 2.0, "transfer_credits": 25}))
+pl = ok(c.get(f"{API}/grades/analytics", params=T))["plan"]
+assert pl["credits_remaining"] == 3 and pl["requirements"][3]["status"] == "fail", "38% en la institución < 50%"
+assert c.put(f"{API}/programs/{CID}", json={"transfer_credits": 50}).status_code == 422
+ok(c.put(f"{API}/programs/{CID}", json={"transfer_credits": None, "max_periods": 3}))
+assert ok(c.get(f"{API}/grades/analytics", params=T))["plan"]["requirements"][2]["status"] == "warn", "1 usado + 3 por delante > 3"
+ok(c.put(f"{API}/programs/{CID}", json={"prior_periods": 3}))
+assert ok(c.get(f"{API}/grades/analytics", params=T))["plan"]["requirements"][2]["status"] == "fail"
+
+# Meta imposible: dice hasta dónde llegarías con todo A
+ok(c.put(f"{API}/programs/{CID}", json={"total_credits": 14, "total_subjects": None, "honors": [{"name": "Summa", "min": 3.9}]}))
+t = ok(c.get(f"{API}/grades/analytics", params=T))["plan"]["targets"][0]
+assert (t["status"], t["final_if_all"]) == ("descalificado", 3.71), t  # tiempo excedido; (44 + 8) / 14
+ok(c.put(f"{API}/programs/{CID}", json={"prior_periods": None, "max_periods": None}))
+assert ok(c.get(f"{API}/grades/analytics", params=T))["plan"]["targets"][0]["status"] == "imposible"
+
+# Varias carreras: cada una con sus horarios e índice
+idi = ok(c.post(f"{API}/programs", json={"name": "Inglés", "institution": "Instituto"}), 201)
+assert c.post(f"{API}/programs", json={"institution": "x"}).status_code == 422
+pi = ok(c.post(f"{API}/schedules", params=T, json={"name": "Nivel 1", "program_id": idi["id"], "start_date": "2026-01-05"}), 201)
+grade(subject(pi["id"], "Inglés 1", 2), 70)
+assert ok(c.get(f"{API}/grades/analytics", params={**T, "program_id": idi["id"]}))["cumulative_index"] == 2.0
+assert ok(c.get(f"{API}/grades/analytics", params=T))["cumulative_index"] == 3.67, "la principal no mezcla la otra carrera"
+assert c.delete(f"{API}/programs/{idi['id']}").status_code == 409, "tiene horarios"
+ok(c.patch(f"{API}/schedules/{pi['id']}", params=T, json={"program_id": CID}))
+ok(c.delete(f"{API}/programs/{idi['id']}"), 204)
+assert c.delete(f"{API}/programs/{CID}").status_code == 409, "la única carrera"
+assert c.get(f"{API}/grades/analytics", params={**T, "program_id": PID}).status_code == 404, "carrera de otro usuario"
 
 print("OK: checks de notas e índice pasaron")

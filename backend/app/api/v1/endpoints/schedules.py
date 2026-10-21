@@ -1,5 +1,5 @@
 from datetime import date
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
@@ -7,12 +7,12 @@ from sqlalchemy.orm import Session
 from app.api.deps import CurrentUser, get_current_user
 from app.api.v1.endpoints.tasks import _owned
 from app.core.database import get_db
-from app.models import ClassAttendance, Schedule, Subject, SubjectSession, TaskItem
+from app.models import ClassAttendance, Program, Schedule, Subject, SubjectSession, TaskItem
 from app.schemas.tasks import (
-    AcademicSettingsIn,
-    AcademicSettingsOut,
     AttendanceIn,
     GradeIn,
+    ProgramIn,
+    ProgramOut,
     ScheduleDuplicateIn,
     ScheduleIn,
     ScheduleOut,
@@ -65,9 +65,10 @@ def _serialize(db: Session, user_id: str, schedules: List[Schedule], today: date
     for s in sessions:
         by_subject.setdefault(s.subject_id, []).append(s)
 
-    settings = gr.get_settings(db, user_id)
+    programs = {p.id: p for p in gr.get_programs(db, user_id)}
     out = []
     for sch in schedules:
+        settings = programs[sch.program_id]
         o = ScheduleOut.model_validate(sch)
         for subj in [x for x in subjects if x.schedule_id == sch.id]:
             so = SubjectOut.model_validate(subj)
@@ -110,7 +111,7 @@ def _dates(payload) -> tuple:
 @router.post("/schedules", response_model=ScheduleOut, status_code=201)
 def create_schedule(payload: ScheduleIn, today: date = Query(...), user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
     start, end = _dates(payload)
-    sch = Schedule(user_id=user.id, name=payload.name.strip(), institution=(payload.institution or "").strip() or None,
+    sch = Schedule(user_id=user.id, name=payload.name.strip(), program_id=gr.get_program(db, user.id, payload.program_id).id,
                    period_type=payload.period_type, start_date=start, end_date=end)
     db.add(sch)
     db.commit()
@@ -121,8 +122,10 @@ def create_schedule(payload: ScheduleIn, today: date = Query(...), user: Current
 def update_schedule(sid: str, payload: ScheduleUpdate, today: date = Query(...), user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
     sch = _owned(db, Schedule, sid, user.id)
     for k, v in payload.model_dump(exclude_unset=True).items():
-        if v is None and k not in ("institution",):
+        if v is None:
             continue
+        if k == "program_id":
+            v = gr.get_program(db, user.id, v).id
         setattr(sch, k, v.strip() if isinstance(v, str) else v)
     if sch.end_date < sch.start_date:
         raise HTTPException(status_code=422, detail="La fecha de fin debe ser posterior al inicio.")
@@ -144,7 +147,7 @@ def delete_schedule(sid: str, user: CurrentUser = Depends(get_current_user), db:
 def duplicate_schedule(sid: str, payload: ScheduleDuplicateIn, today: date = Query(...), user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
     src = _owned(db, Schedule, sid, user.id)
     start, end = _dates(payload)
-    new = Schedule(user_id=user.id, name=payload.name.strip(), institution=(payload.institution or src.institution),
+    new = Schedule(user_id=user.id, name=payload.name.strip(), program_id=gr.get_program(db, user.id, payload.program_id or src.program_id).id,
                    period_type=payload.period_type, start_date=start, end_date=end)
     db.add(new)
     db.flush()
@@ -265,34 +268,72 @@ def set_grade(subject_id: str, payload: GradeIn, user: CurrentUser = Depends(get
     subj = _owned(db, Subject, subject_id, user.id)
     subj.final_grade = payload.grade
     db.commit()
-    st = gr.get_settings(db, user.id)
+    st = gr.get_program(db, user.id, db.get(Schedule, subj.schedule_id).program_id)
     band = gr.letter_for(payload.grade, st.scale) if payload.grade is not None else None
     return {"subject_id": subj.id, "grade": payload.grade, "letter": band["letter"] if band else None,
             "passed": payload.grade >= st.pass_min if payload.grade is not None else None}
 
 
-@router.get("/academic/settings", response_model=AcademicSettingsOut)
-def get_academic(user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
-    return gr.get_settings(db, user.id)
-
-
-@router.put("/academic/settings", response_model=AcademicSettingsOut, summary="Escala de notas e historial previo")
-def update_academic(payload: AcademicSettingsIn, user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
-    st = gr.get_settings(db, user.id)
+# ============ Carreras ============
+def _apply_program(st: Program, payload: ProgramIn) -> None:
     data = payload.model_dump(exclude_unset=True)
-    if "scale" in data and data["scale"] is not None:
-        st.scale = [dict(b) for b in data.pop("scale")]
-    else:
-        data.pop("scale", None)
-    if data.get("pass_min") is None:
-        data.pop("pass_min", None)
+    for k in ("scale", "honors"):
+        if data.get(k) is not None:
+            setattr(st, k, [dict(b) for b in data.pop(k)])
+        else:
+            data.pop(k, None)
+    for k in ("name", "pass_min"):
+        if data.get(k) is None:
+            data.pop(k, None)
+    if "institution" in data:
+        data["institution"] = (data["institution"] or "").strip() or None
     for k, v in data.items():
-        setattr(st, k, v)  # los campos prior_* aceptan null para borrar el historial
+        setattr(st, k, v.strip() if isinstance(v, str) else v)  # el resto acepta null para borrarlo
+
+
+@router.get("/programs", response_model=List[ProgramOut], summary="Carreras; la primera es la principal")
+def list_programs(user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    return gr.get_programs(db, user.id)
+
+
+@router.post("/programs", response_model=ProgramOut, status_code=201)
+def create_program(payload: ProgramIn, user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not payload.name:
+        raise HTTPException(status_code=422, detail="La carrera necesita un nombre.")
+    gr.get_programs(db, user.id)  # la principal existe antes que las nuevas
+    st = Program(user_id=user.id, name=payload.name)
+    _apply_program(st, payload)
+    db.add(st)
     db.commit()
     db.refresh(st)
     return st
 
 
-@router.get("/grades/analytics", summary="Índice, promedio, letras, aprobadas y reprobadas")
-def grades_analytics(today: date = Query(...), user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
-    return gr.compute(db, user.id, today)
+@router.put("/programs/{pid}", response_model=ProgramOut, summary="Datos, escala, historial, pénsum y metas de la carrera")
+def update_program(pid: str, payload: ProgramIn, user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    st = gr.get_program(db, user.id, pid)
+    _apply_program(st, payload)
+    if st.total_credits and st.transfer_credits and st.transfer_credits > st.total_credits:
+        raise HTTPException(status_code=422, detail="Los créditos convalidados no pueden superar los del pénsum.")
+    db.commit()
+    db.refresh(st)
+    return st
+
+
+@router.delete("/programs/{pid}", status_code=204, summary="Solo carreras sin horarios; la principal no se borra si es la única")
+def delete_program(pid: str, user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    programs = gr.get_programs(db, user.id)
+    st = gr.get_program(db, user.id, pid)
+    if len(programs) == 1:
+        raise HTTPException(status_code=409, detail="Necesitas al menos una carrera.")
+    if db.query(Schedule).filter(Schedule.program_id == st.id).count():
+        raise HTTPException(status_code=409, detail="Mueve o borra primero los horarios de esta carrera.")
+    db.delete(st)
+    db.commit()
+    return Response(status_code=204)
+
+
+@router.get("/grades/analytics", summary="Índice, letras, aprobadas, lo que falta y metas de la carrera")
+def grades_analytics(today: date = Query(...), program_id: Optional[str] = Query(default=None),
+                     user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    return gr.compute(db, user.id, today, program_id)

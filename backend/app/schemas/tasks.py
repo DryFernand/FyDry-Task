@@ -271,7 +271,7 @@ PeriodType = Literal["bimestral", "trimestral", "cuatrimestral", "semestral", "a
 
 class ScheduleIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
-    institution: Optional[str] = Field(default=None, max_length=120)
+    program_id: Optional[str] = None  # None = la carrera principal
     period_type: PeriodType = "cuatrimestral"
     start_date: dt.date
     end_date: Optional[dt.date] = None  # None = se calcula según el tipo
@@ -287,7 +287,7 @@ class ScheduleIn(BaseModel):
 
 class ScheduleUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=120)
-    institution: Optional[str] = Field(default=None, max_length=120)
+    program_id: Optional[str] = None
     period_type: Optional[PeriodType] = None
     start_date: Optional[dt.date] = None
     end_date: Optional[dt.date] = None
@@ -355,7 +355,7 @@ class SubjectOut(CoreSchema):
 class ScheduleOut(CoreSchema):
     id: str
     name: str
-    institution: Optional[str]
+    program_id: Optional[str]
     period_type: str
     start_date: dt.date
     end_date: dt.date
@@ -382,7 +382,14 @@ class GradeBand(BaseModel):
     points: float = Field(ge=0, le=5)
 
 
-class AcademicSettingsIn(BaseModel):
+class HonorLevel(BaseModel):
+    name: str = Field(min_length=1, max_length=40)
+    min: float = Field(ge=0, le=5)
+
+
+class ProgramIn(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    institution: Optional[str] = Field(default=None, max_length=120)
     scale: Optional[List[GradeBand]] = Field(default=None, min_length=2, max_length=12)
     pass_min: Optional[float] = Field(default=None, ge=0, le=100)
     prior_index: Optional[float] = Field(default=None, ge=0, le=5)
@@ -390,6 +397,15 @@ class AcademicSettingsIn(BaseModel):
     prior_courses: Optional[int] = Field(default=None, ge=0, le=500)
     prior_passed: Optional[int] = Field(default=None, ge=0, le=500)
     prior_failed: Optional[int] = Field(default=None, ge=0, le=500)
+    prior_periods: Optional[int] = Field(default=None, ge=0, le=60)
+    total_credits: Optional[int] = Field(default=None, ge=1, le=1000)
+    total_subjects: Optional[int] = Field(default=None, ge=1, le=500)
+    transfer_credits: Optional[int] = Field(default=None, ge=0, le=1000)
+    honors: Optional[List[HonorLevel]] = Field(default=None, max_length=8)
+    target_index: Optional[float] = Field(default=None, ge=0, le=5)
+    probation_min: Optional[float] = Field(default=None, ge=0, le=5)
+    max_periods: Optional[int] = Field(default=None, ge=1, le=60)
+    min_institution_pct: Optional[int] = Field(default=None, ge=0, le=100)
 
     @field_validator("scale")
     @classmethod
@@ -406,16 +422,26 @@ class AcademicSettingsIn(BaseModel):
             raise ValueError("Dos tramos no pueden empezar en la misma nota.")
         return sorted([GradeBand(letter=b.letter.strip().upper(), min=b.min, points=b.points) for b in v], key=lambda b: -b.min)
 
+    @field_validator("honors")
+    @classmethod
+    def check_honors(cls, v):
+        return sorted([HonorLevel(name=h.name.strip(), min=h.min) for h in v], key=lambda h: -h.min) if v is not None else v
+
     @model_validator(mode="after")
     def check_prior(self):
         if self.prior_courses is not None and (self.prior_passed or 0) + (self.prior_failed or 0) > self.prior_courses:
             raise ValueError("Aprobadas + reprobadas no puede ser mayor que las materias cursadas.")
         if self.prior_index is not None and not self.prior_credits:
             raise ValueError("Para usar tu índice anterior indica también los créditos cursados.")
+        if self.total_credits and self.transfer_credits and self.transfer_credits > self.total_credits:
+            raise ValueError("Los créditos convalidados no pueden superar los del pénsum.")
         return self
 
 
-class AcademicSettingsOut(CoreSchema):
+class ProgramOut(CoreSchema):
+    id: str
+    name: str
+    institution: Optional[str]
     scale: List[dict]
     pass_min: float
     prior_index: Optional[float]
@@ -423,3 +449,12 @@ class AcademicSettingsOut(CoreSchema):
     prior_courses: Optional[int]
     prior_passed: Optional[int]
     prior_failed: Optional[int]
+    prior_periods: Optional[int]
+    total_credits: Optional[int]
+    total_subjects: Optional[int]
+    transfer_credits: Optional[int]
+    honors: List[dict]
+    target_index: Optional[float]
+    probation_min: Optional[float]
+    max_periods: Optional[int]
+    min_institution_pct: Optional[int]

@@ -209,7 +209,7 @@ export interface SubjectInput {
 export interface Schedule {
   id: string;
   name: string;
-  institution: string | null;
+  program_id: string;
   period_type: PeriodType;
   start_date: string;
   end_date: string;
@@ -222,7 +222,7 @@ export interface Schedule {
 
 export interface ScheduleInput {
   name: string;
-  institution?: string | null;
+  program_id?: string | null;
   period_type: PeriodType;
   start_date: string;
   end_date?: string | null;
@@ -253,7 +253,16 @@ export interface GradeBand {
   points: number;
 }
 
-export interface AcademicSettings {
+export interface HonorLevel {
+  name: string;
+  min: number;
+}
+
+/** Carrera: agrupa horarios de una institución con su escala, historial, pénsum y metas. */
+export interface Program {
+  id: string;
+  name: string;
+  institution: string | null;
   scale: GradeBand[];
   pass_min: number;
   prior_index: number | null;
@@ -261,6 +270,46 @@ export interface AcademicSettings {
   prior_courses: number | null;
   prior_passed: number | null;
   prior_failed: number | null;
+  prior_periods: number | null;
+  total_credits: number | null;
+  total_subjects: number | null;
+  transfer_credits: number | null;
+  honors: HonorLevel[];
+  target_index: number | null;
+  probation_min: number | null;
+  max_periods: number | null;
+  min_institution_pct: number | null;
+}
+
+export type TargetStatus = "asegurado" | "en_camino" | "exigente" | "imposible" | "descalificado" | "logrado" | "no_alcanzado" | "sin_pensum";
+
+export interface PlanTarget {
+  name: string;
+  min: number;
+  kind: "honor" | "target";
+  status: TargetStatus;
+  needed: number | null;
+  margins: { letter: string; credits: number; subjects: number | null }[];
+  probability: number | null;
+  final_if_all: number | null;
+}
+
+export interface GradesPlan {
+  total_credits: number | null;
+  total_subjects: number | null;
+  transfer_credits: number;
+  credits_done: number;
+  credits_in_progress: number;
+  credits_remaining: number | null;
+  subjects_remaining: number | null;
+  progress: number | null;
+  periods_used: number;
+  periods_left: number | null;
+  max_periods: number | null;
+  expected_points: number | null;
+  eligible: boolean;
+  requirements: { key: string; label: string; status: "ok" | "fail" | "warn" | "unknown"; detail: string }[];
+  targets: PlanTarget[];
 }
 
 export interface GradedSubject {
@@ -277,6 +326,7 @@ export interface GradedSubject {
 }
 
 export interface GradesAnalytics {
+  program: { id: string; name: string; institution: string | null };
   scale: GradeBand[];
   pass_min: number;
   has_prior: boolean;
@@ -295,6 +345,7 @@ export interface GradesAnalytics {
   without_credits: string[];
   subjects: GradedSubject[];
   evolution: { schedule_id: string; name: string; start_date: string; end_date: string; subjects: number; credits: number; period_index: number | null; average: number; cumulative_index: number | null }[];
+  plan: GradesPlan;
   insights: string[];
 }
 
@@ -548,9 +599,11 @@ export const api = {
   deleteSubject: (id: string) => send<null>(`/subjects/${id}`, "DELETE"),
   subjectAssignments: (id: string) => send<Task[]>(`/subjects/${id}/assignments`),
   setGrade: (subjectId: string, grade: number | null) => send<{ letter: string | null; passed: boolean | null }>(`/subjects/${subjectId}/grade`, "PUT", { grade }),
-  academicSettings: () => send<AcademicSettings>("/academic/settings"),
-  saveAcademicSettings: (data: Partial<AcademicSettings>) => send<AcademicSettings>("/academic/settings", "PUT", data),
-  gradesAnalytics: () => send<GradesAnalytics>(`/grades/analytics${qs({ today: todayISO() })}`),
+  programs: () => send<Program[]>("/programs"),
+  createProgram: (data: Partial<Program>) => send<Program>("/programs", "POST", data),
+  updateProgram: (id: string, data: Partial<Program>) => send<Program>(`/programs/${id}`, "PUT", data),
+  deleteProgram: (id: string) => send<null>(`/programs/${id}`, "DELETE"),
+  gradesAnalytics: (programId?: string | null) => send<GradesAnalytics>(`/grades/analytics${qs({ today: todayISO(), ...(programId ? { program_id: programId } : {}) })}`),
   markAttendance: (sessionId: string, date: string, status: AttendanceStatus | null) => send<unknown>(`/sessions/${sessionId}/attendance`, "PUT", { date, status }),
 
   challenges: (start: string, end: string) => send<Challenge[]>(`/challenges${qs({ start, end })}`),

@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Award, Loader2, Plus, Trash2 } from "lucide-react";
 import Modal from "./Modal";
-import { fieldLabel } from "./TaskFormModal";
+import { fieldInput, fieldLabel } from "./TaskFormModal";
 import { useDash } from "./DashContext";
-import { AcademicSettings, api, GradeBand, letterFor, Schedule, todayISO } from "@/lib/tasks";
+import { api, GradeBand, HonorLevel, letterFor, Program, Schedule, todayISO } from "@/lib/tasks";
 
 export const statusBadge = (passed: boolean | null) =>
   passed === null ? null : passed ? (
@@ -16,16 +16,12 @@ export const statusBadge = (passed: boolean | null) =>
 
 /** Notas del periodo: una nota final por materia; letra y estado salen de la escala. */
 export function GradesPanel({ s }: { s: Schedule }) {
-  const { onError, reloadSchedules } = useDash();
-  const [settings, setSettings] = useState<AcademicSettings | null>(null);
+  const { onError, reloadSchedules, programs } = useDash();
+  const settings = programs.find((p) => p.id === s.program_id) ?? null;
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
   const finished = todayISO() > s.end_date;
   const missing = s.subjects.filter((m) => m.final_grade === null).length;
-
-  useEffect(() => {
-    api.academicSettings().then(setSettings).catch((e) => onError(e.message));
-  }, [onError]);
 
   const save = async (id: string, raw: string, current: number | null) => {
     const value = raw.trim() === "" ? null : Number(raw);
@@ -103,48 +99,46 @@ export function GradesPanel({ s }: { s: Schedule }) {
 }
 
 const num = (v: string) => (v.trim() === "" ? null : Number(v));
+const str = (x: number | null | undefined) => (x == null ? "" : String(x));
 
-/** Escala de notas, nota mínima para aprobar e historial previo (resumen manual). */
-export function AcademicModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  if (!open) return null;
-  return <AcademicForm onClose={onClose} />;
+const DEFAULT_SCALE: GradeBand[] = [
+  { letter: "A", min: 90, points: 4 }, { letter: "B", min: 80, points: 3 }, { letter: "C", min: 70, points: 2 }, { letter: "D", min: 60, points: 1 }, { letter: "F", min: 0, points: 0 },
+];
+const DEFAULT_HONORS: HonorLevel[] = [{ name: "Summa Cum Laude", min: 3.8 }, { name: "Magna Cum Laude", min: 3.5 }, { name: "Cum Laude", min: 3.2 }];
+
+/** Carrera: datos, pénsum, metas, requisitos de honores, historial previo y escala de notas. null = nueva. */
+export function ProgramModal({ program, onClose }: { program: Program | null | undefined; onClose: () => void }) {
+  if (program === undefined) return null;
+  return <ProgramForm key={program?.id ?? "new"} program={program} onClose={onClose} />;
 }
 
-function AcademicForm({ onClose }: { onClose: () => void }) {
-  const { onError, onInfo, reloadSchedules } = useDash();
-  const [loaded, setLoaded] = useState<AcademicSettings | null>(null);
-  const [scale, setScale] = useState<GradeBand[]>([]);
-  const [passMin, setPassMin] = useState("70");
-  const [prior, setPrior] = useState({ index: "", credits: "", courses: "", passed: "", failed: "" });
+function ProgramForm({ program, onClose }: { program: Program | null; onClose: () => void }) {
+  const { programs, onInfo, reloadSchedules } = useDash();
+  const p = program;
+  const [name, setName] = useState(p?.name ?? "");
+  const [institution, setInstitution] = useState(p?.institution ?? "");
+  const [scale, setScale] = useState<GradeBand[]>(p?.scale ?? DEFAULT_SCALE);
+  const [passMin, setPassMin] = useState(str(p?.pass_min ?? 70));
+  const [honors, setHonors] = useState<HonorLevel[]>(p?.honors ?? DEFAULT_HONORS);
+  const [f, setF] = useState({
+    total_credits: str(p?.total_credits), total_subjects: str(p?.total_subjects), transfer_credits: str(p?.transfer_credits),
+    target_index: str(p?.target_index), probation_min: str(p ? p.probation_min : 2), max_periods: str(p?.max_periods),
+    min_institution_pct: str(p ? p.min_institution_pct : 50), prior_periods: str(p?.prior_periods),
+    prior_index: str(p?.prior_index), prior_credits: str(p?.prior_credits), prior_courses: str(p?.prior_courses), prior_passed: str(p?.prior_passed), prior_failed: str(p?.prior_failed),
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-
-  useEffect(() => {
-    api.academicSettings().then((st) => {
-      setLoaded(st);
-      setScale(st.scale);
-      setPassMin(String(st.pass_min));
-      const v = (x: number | null) => (x == null ? "" : String(x));
-      setPrior({ index: v(st.prior_index), credits: v(st.prior_credits), courses: v(st.prior_courses), passed: v(st.prior_passed), failed: v(st.prior_failed) });
-    }).catch((e) => onError(e.message));
-  }, [onError]);
+  const isMain = !!p && programs[0]?.id === p.id;
 
   const setBand = (i: number, patch: Partial<GradeBand>) => setScale((l) => l.map((b, j) => (j === i ? { ...b, ...patch } : b)));
+  const setHonor = (i: number, patch: Partial<HonorLevel>) => setHonors((l) => l.map((h, j) => (j === i ? { ...h, ...patch } : h)));
 
-  const save = async () => {
+  const run = async (fn: () => Promise<unknown>, ok: string) => {
     setSaving(true);
     setError("");
     try {
-      await api.saveAcademicSettings({
-        scale: scale.map((b) => ({ letter: b.letter, min: Number(b.min), points: Number(b.points) })),
-        pass_min: Number(passMin),
-        prior_index: num(prior.index),
-        prior_credits: num(prior.credits),
-        prior_courses: num(prior.courses),
-        prior_passed: num(prior.passed),
-        prior_failed: num(prior.failed),
-      });
-      onInfo("Configuración académica guardada.");
+      await fn();
+      onInfo(ok);
       reloadSchedules();
       onClose();
     } catch (e) {
@@ -154,63 +148,137 @@ function AcademicForm({ onClose }: { onClose: () => void }) {
     }
   };
 
+  const save = () => {
+    if (!name.trim()) return setError("Ponle un nombre a la carrera, ej. \"Desarrollo de Software\".");
+    const data = {
+      name: name.trim(),
+      institution: institution.trim() || null,
+      scale: scale.map((b) => ({ letter: b.letter, min: Number(b.min), points: Number(b.points) })),
+      pass_min: Number(passMin),
+      honors: honors.filter((h) => h.name.trim()).map((h) => ({ name: h.name.trim(), min: Number(h.min) })),
+      ...Object.fromEntries(Object.entries(f).map(([k, v]) => [k, num(v)])),
+    };
+    return run(() => (p ? api.updateProgram(p.id, data) : api.createProgram(data)), p ? "Carrera guardada." : "Carrera creada.");
+  };
+
   const small = "w-full px-2.5 py-2 rounded-xl border border-zinc-200 text-sm tabular-nums";
+  const numField = (k: keyof typeof f, label: string, step = "1", hint?: string) => (
+    <label key={k} className="block">
+      <span className={fieldLabel}>{label}</span>
+      <input type="number" min={0} step={step} value={f[k]} onChange={(e) => setF((x) => ({ ...x, [k]: e.target.value }))} className={small} />
+      {hint && <span className="block mt-0.5 text-[10px] text-zinc-400">{hint}</span>}
+    </label>
+  );
+
   return (
-    <Modal open wide onClose={onClose} title="Historial académico y escala de notas"
+    <Modal open wide onClose={onClose} title={p ? `Carrera · ${p.name}` : "Nueva carrera"}
       footer={
-        <div className="flex items-center justify-end gap-2">
-          <button type="button" onClick={onClose} className="px-4 py-2.5 rounded-xl text-xs font-semibold text-zinc-600 hover:bg-zinc-100 cursor-pointer">Cancelar</button>
-          <button type="button" onClick={save} disabled={saving || !loaded} className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold disabled:opacity-60 cursor-pointer">
-            {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Guardar
-          </button>
+        <div className="flex items-center justify-between gap-2">
+          {p && !isMain ? (
+            <button type="button" disabled={saving} onClick={() => window.confirm(`¿Eliminar la carrera "${p.name}"?`) && run(() => api.deleteProgram(p.id), "Carrera eliminada.")}
+              className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-semibold text-rose-600 hover:bg-rose-50 cursor-pointer"><Trash2 className="w-3.5 h-3.5" /> Eliminar</button>
+          ) : <span />}
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={onClose} className="px-4 py-2.5 rounded-xl text-xs font-semibold text-zinc-600 hover:bg-zinc-100 cursor-pointer">Cancelar</button>
+            <button type="button" onClick={save} disabled={saving} className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold disabled:opacity-60 cursor-pointer">
+              {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Guardar
+            </button>
+          </div>
         </div>
       }>
-      {!loaded ? <div className="py-10 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-zinc-400" /></div> : (
-        <div className="space-y-6">
-          <section className="space-y-2">
-            <h3 className="text-xs font-bold text-zinc-900">Historial anterior (opcional)</h3>
-            <p className="text-[11px] text-zinc-500 leading-relaxed">
-              Si no quieres registrar tus periodos pasados materia por materia, escribe aquí tu resumen. Tu índice acumulado combinará esto con las notas que registres en la app.
-              Registrar los periodos anteriores (botón &quot;Periodo anterior&quot;) da un análisis más completo.
-            </p>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-              {([["index", "Índice actual", "0.01"], ["credits", "Créditos cursados", "1"], ["courses", "Materias cursadas", "1"], ["passed", "Aprobadas", "1"], ["failed", "Reprobadas", "1"]] as const).map(([k, l, step]) => (
-                <label key={k} className="block">
-                  <span className={fieldLabel}>{l}</span>
-                  <input type="number" min={0} step={step} value={prior[k]} onChange={(e) => setPrior((p) => ({ ...p, [k]: e.target.value }))} className={small} />
-                </label>
-              ))}
-            </div>
-          </section>
+      <div className="space-y-6">
+        <section className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label className="block">
+            <span className={fieldLabel}>Carrera</span>
+            <input autoFocus value={name} onChange={(e) => setName(e.target.value)} maxLength={120} placeholder="Ej. Desarrollo de Software" className={fieldInput} />
+          </label>
+          <label className="block">
+            <span className={fieldLabel}>Institución (opcional)</span>
+            <input value={institution} onChange={(e) => setInstitution(e.target.value)} maxLength={120} placeholder="Ej. ITLA, UASD, PUCMM" className={fieldInput} />
+          </label>
+        </section>
 
-          <section className="space-y-2">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-bold text-zinc-900">Escala de notas</h3>
-              <button type="button" onClick={() => setScale((l) => [...l, { letter: "", min: 0, points: 0 }])} className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 cursor-pointer"><Plus className="w-3.5 h-3.5" /> Tramo</button>
+        <section className="space-y-2">
+          <h3 className="text-xs font-bold text-zinc-900">Pénsum</h3>
+          <p className="text-[11px] text-zinc-500">Con los créditos totales se calcula lo que te falta y qué índice necesitas para tus metas.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            {numField("total_credits", "Créditos de la carrera")}
+            {numField("total_subjects", "Materias de la carrera")}
+            {numField("transfer_credits", "Créditos convalidados", "1", "Avanzan el pénsum, no cuentan en el índice")}
+          </div>
+        </section>
+
+        <section className="space-y-2">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-bold text-zinc-900">Metas: honores e índice deseado</h3>
+            <button type="button" onClick={() => setHonors((l) => [...l, { name: "", min: 3 }])} disabled={honors.length >= 8} className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 disabled:opacity-40 cursor-pointer"><Plus className="w-3.5 h-3.5" /> Honor</button>
+          </div>
+          {honors.map((h, i) => (
+            <div key={i} className="grid grid-cols-[1fr_6rem_auto] gap-2 items-center">
+              <input value={h.name} maxLength={40} aria-label="Nombre del honor" onChange={(e) => setHonor(i, { name: e.target.value })} className={small} />
+              <input type="number" min={0} max={5} step={0.01} value={h.min} aria-label="Índice mínimo" onChange={(e) => setHonor(i, { min: Number(e.target.value) })} className={small} />
+              <button type="button" onClick={() => setHonors((l) => l.filter((_, j) => j !== i))} aria-label="Quitar honor" className="p-2 rounded-xl text-zinc-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"><Trash2 className="w-4 h-4" /></button>
             </div>
-            <p className="text-[11px] text-zinc-500">Cada letra empieza en una nota mínima y vale ciertos puntos para el índice. La escala típica es A 90 · B 80 · C 70 · D 60 · F 0.</p>
-            <div className="grid grid-cols-[4rem_1fr_1fr_auto] gap-2 text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
-              <span>Letra</span><span>Desde (nota)</span><span>Puntos</span><span />
+          ))}
+          <div className="grid grid-cols-[1fr_6rem_auto] gap-2 items-center">
+            <span className="text-xs text-zinc-700 pl-1">Índice deseado (opcional, no requiere los requisitos de honores)</span>
+            <input type="number" min={0} max={5} step={0.01} value={f.target_index} aria-label="Índice deseado" onChange={(e) => setF((x) => ({ ...x, target_index: e.target.value }))} className={small} />
+            <span className="w-8" />
+          </div>
+        </section>
+
+        <section className="space-y-2">
+          <h3 className="text-xs font-bold text-zinc-900">Requisitos de honores</h3>
+          <p className="text-[11px] text-zinc-500">Una materia reprobada en cualquier momento anula los honores, aunque la repitas y apruebes. Deja vacío lo que tu institución no exija.</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {numField("probation_min", "Índice mínimo (prueba)", "0.01", "Por debajo = condición de prueba")}
+            {numField("max_periods", "Permanencia máxima", "1", "En periodos")}
+            {numField("prior_periods", "Periodos antes de la app", "1", "Para contar el tiempo")}
+            {numField("min_institution_pct", "% mínimo en la institución", "1", "Del pénsum, sin convalidar")}
+          </div>
+        </section>
+
+        <section className="space-y-2">
+          <h3 className="text-xs font-bold text-zinc-900">Historial anterior (opcional)</h3>
+          <p className="text-[11px] text-zinc-500 leading-relaxed">
+            Si no quieres registrar tus periodos pasados materia por materia, escribe aquí tu resumen. Tu índice acumulado combinará esto con las notas que registres en la app.
+            Registrar los periodos anteriores (botón &quot;Periodo anterior&quot;) da un análisis más completo.
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+            {numField("prior_index", "Índice actual", "0.01")}
+            {numField("prior_credits", "Créditos cursados")}
+            {numField("prior_courses", "Materias cursadas")}
+            {numField("prior_passed", "Aprobadas")}
+            {numField("prior_failed", "Reprobadas")}
+          </div>
+        </section>
+
+        <section className="space-y-2">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-bold text-zinc-900">Escala de notas</h3>
+            <button type="button" onClick={() => setScale((l) => [...l, { letter: "", min: 0, points: 0 }])} className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 cursor-pointer"><Plus className="w-3.5 h-3.5" /> Tramo</button>
+          </div>
+          <p className="text-[11px] text-zinc-500">Cada letra empieza en una nota mínima y vale ciertos puntos para el índice. La escala típica es A 90 · B 80 · C 70 · D 60 · F 0.</p>
+          <div className="grid grid-cols-[4rem_1fr_1fr_auto] gap-2 text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
+            <span>Letra</span><span>Desde (nota)</span><span>Puntos</span><span />
+          </div>
+          {scale.map((b, i) => (
+            <div key={i} className="grid grid-cols-[4rem_1fr_1fr_auto] gap-2 items-center">
+              <input value={b.letter} maxLength={3} aria-label="Letra" onChange={(e) => setBand(i, { letter: e.target.value.toUpperCase() })} className={small} />
+              <input type="number" min={0} max={100} value={b.min} aria-label="Nota mínima" onChange={(e) => setBand(i, { min: Number(e.target.value) })} className={small} />
+              <input type="number" min={0} max={5} step={0.1} value={b.points} aria-label="Puntos" onChange={(e) => setBand(i, { points: Number(e.target.value) })} className={small} />
+              <button type="button" onClick={() => setScale((l) => l.filter((_, j) => j !== i))} disabled={scale.length <= 2} aria-label="Quitar tramo" className="p-2 rounded-xl text-zinc-400 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-30 cursor-pointer"><Trash2 className="w-4 h-4" /></button>
             </div>
-            {scale.map((b, i) => (
-              <div key={i} className="grid grid-cols-[4rem_1fr_1fr_auto] gap-2 items-center">
-                <input value={b.letter} maxLength={3} aria-label="Letra" onChange={(e) => setBand(i, { letter: e.target.value.toUpperCase() })} className={small} />
-                <input type="number" min={0} max={100} value={b.min} aria-label="Nota mínima" onChange={(e) => setBand(i, { min: Number(e.target.value) })} className={small} />
-                <input type="number" min={0} max={5} step={0.1} value={b.points} aria-label="Puntos" onChange={(e) => setBand(i, { points: Number(e.target.value) })} className={small} />
-                <button type="button" onClick={() => setScale((l) => l.filter((_, j) => j !== i))} disabled={scale.length <= 2} aria-label="Quitar tramo" className="p-2 rounded-xl text-zinc-400 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-30 cursor-pointer"><Trash2 className="w-4 h-4" /></button>
-              </div>
-            ))}
-            <label className="flex items-center gap-2 pt-2 text-xs text-zinc-700">
-              Se aprueba con
-              <input type="number" min={0} max={100} value={passMin} onChange={(e) => setPassMin(e.target.value)} aria-label="Nota mínima para aprobar" className="w-20 px-2.5 py-1.5 rounded-xl border border-zinc-200 text-sm tabular-nums" />
-              o más
-            </label>
-            <p className="text-[11px] text-zinc-400">Las materias reprobadas y las repetidas cuentan en el índice con sus créditos.</p>
-          </section>
-          {error && <p className="text-xs text-rose-600 font-medium" role="alert">{error}</p>}
-        </div>
-      )}
+          ))}
+          <label className="flex items-center gap-2 pt-2 text-xs text-zinc-700">
+            Se aprueba con
+            <input type="number" min={0} max={100} value={passMin} onChange={(e) => setPassMin(e.target.value)} aria-label="Nota mínima para aprobar" className="w-20 px-2.5 py-1.5 rounded-xl border border-zinc-200 text-sm tabular-nums" />
+            o más
+          </label>
+          <p className="text-[11px] text-zinc-400">Las materias reprobadas y las repetidas cuentan en el índice con sus créditos.</p>
+        </section>
+        {error && <p className="text-xs text-rose-600 font-medium" role="alert">{error}</p>}
+      </div>
     </Modal>
   );
 }
-

@@ -25,7 +25,7 @@ const SaveFooter = ({ onClose, onSave, saving, label = "Guardar", extra }: { onC
 );
 
 // ============ Horario (periodo) ============
-export type ScheduleFormTarget = { kind: "new" } | { kind: "edit"; schedule: Schedule } | { kind: "duplicate"; schedule: Schedule };
+export type ScheduleFormTarget = { kind: "new"; programId?: string } | { kind: "edit"; schedule: Schedule } | { kind: "duplicate"; schedule: Schedule };
 
 export function ScheduleFormModal({ target, onClose, onSaved }: { target: ScheduleFormTarget | null; onClose: () => void; onSaved: () => void }) {
   if (!target) return null;
@@ -37,7 +37,8 @@ function ScheduleForm({ target, onClose, onSaved }: { target: ScheduleFormTarget
   const dup = target.kind === "duplicate";
   const firstStart = dup ? todayISO() : src?.start_date ?? todayISO();
   const [name, setName] = useState(dup ? "" : src?.name ?? "");
-  const [institution, setInstitution] = useState(src?.institution ?? "");
+  const { programs } = useDash();
+  const [programId, setProgramId] = useState(src?.program_id ?? (target.kind === "new" ? target.programId : undefined) ?? programs[0]?.id ?? "");
   const [type, setType] = useState<PeriodType>(src?.period_type ?? "cuatrimestral");
   const [start, setStart] = useState(firstStart);
   const [end, setEnd] = useState(dup ? suggestedEnd(firstStart, src!.period_type) ?? firstStart : src?.end_date ?? suggestedEnd(firstStart, "cuatrimestral")!);
@@ -55,7 +56,7 @@ function ScheduleForm({ target, onClose, onSaved }: { target: ScheduleFormTarget
     if (end < start) return setError("La fecha de fin debe ser posterior al inicio.");
     setSaving(true);
     setError("");
-    const data = { name: name.trim(), institution: institution.trim() || null, period_type: type, start_date: start, end_date: end };
+    const data = { name: name.trim(), program_id: programId || null, period_type: type, start_date: start, end_date: end };
     try {
       if (target.kind === "edit") await api.updateSchedule(target.schedule.id, data);
       else if (dup) await api.duplicateSchedule(target.schedule.id, data);
@@ -80,8 +81,10 @@ function ScheduleForm({ target, onClose, onSaved }: { target: ScheduleFormTarget
             <input id="sch-name" autoFocus value={name} onChange={(e) => setName(e.target.value)} maxLength={120} placeholder="Ej. Cuatrimestre sep–dic 2026" className={fieldInput} />
           </div>
           <div>
-            <label htmlFor="sch-inst" className={fieldLabel}>Institución (opcional)</label>
-            <input id="sch-inst" value={institution} onChange={(e) => setInstitution(e.target.value)} maxLength={120} placeholder="Ej. UASD, PUCMM, Instituto de idiomas" className={fieldInput} />
+            <label htmlFor="sch-prog" className={fieldLabel}>Carrera</label>
+            <select id="sch-prog" value={programId} onChange={(e) => setProgramId(e.target.value)} className={fieldInput}>
+              {programs.map((p) => <option key={p.id} value={p.id}>{p.name}{p.institution ? ` · ${p.institution}` : ""}</option>)}
+            </select>
           </div>
         </div>
         <div>

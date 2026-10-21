@@ -2,24 +2,39 @@
 
 Índice = Σ(puntos × créditos) / Σ créditos. Las materias reprobadas (y las repetidas) cuentan
 con sus créditos. El historial manual (índice y créditos previos) se suma como un bloque más.
+Todo se calcula por carrera: cada carrera agrupa sus horarios con su escala e historial.
 """
+import math
 from datetime import date
 from typing import Dict, List, Optional
 
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.models import AcademicSettings, Schedule, Subject
-from app.models.tasks import DEFAULT_GRADE_SCALE
+from app.models import Program, Schedule, Subject
 
 
-def get_settings(db: Session, user_id: str) -> AcademicSettings:
-    s = db.get(AcademicSettings, user_id)
-    if not s:
-        s = AcademicSettings(user_id=user_id, scale=[dict(x) for x in DEFAULT_GRADE_SCALE], pass_min=70.0)
-        db.add(s)
-        db.commit()
-        db.refresh(s)
-    return s
+def get_programs(db: Session, user_id: str) -> List[Program]:
+    """Carreras del usuario; la primera es la principal. Siempre hay al menos una."""
+    rows = db.query(Program).filter(Program.user_id == user_id).order_by(Program.created_at, Program.id).all()
+    if not rows:
+        rows = [Program(user_id=user_id, name="Mi carrera")]
+        db.add(rows[0])
+        db.flush()
+    # Horarios sin carrera (creados antes de que existieran) pasan a la principal
+    db.query(Schedule).filter(Schedule.user_id == user_id, Schedule.program_id.is_(None)).update({"program_id": rows[0].id})
+    db.commit()
+    return rows
+
+
+def get_program(db: Session, user_id: str, program_id: Optional[str] = None) -> Program:
+    programs = get_programs(db, user_id)
+    if program_id is None:
+        return programs[0]
+    for p in programs:
+        if p.id == program_id:
+            return p
+    raise HTTPException(status_code=404, detail="Carrera no encontrada.")
 
 
 def letter_for(grade: float, scale: List[Dict]) -> Dict:
@@ -34,25 +49,29 @@ def _index(points_credits: float, credits: float) -> Optional[float]:
     return round(points_credits / credits, 2) if credits else None
 
 
-def compute(db: Session, user_id: str, today: date) -> Dict:
-    st = get_settings(db, user_id)
+def compute(db: Session, user_id: str, today: date, program_id: Optional[str] = None) -> Dict:
+    st = get_program(db, user_id, program_id)
     scale = st.scale
     rows = (
         db.query(Subject, Schedule)
         .join(Schedule, Subject.schedule_id == Schedule.id)
-        .filter(Schedule.user_id == user_id)
+        .filter(Schedule.user_id == user_id, Schedule.program_id == st.id)
         .order_by(Schedule.start_date, Subject.position)
         .all()
     )
 
-    graded, pending, in_progress = [], [], 0
+    graded, pending, in_progress, in_progress_credits = [], [], 0, 0
+    started = set()
     periods: Dict[str, Dict] = {}
     for subj, sch in rows:
+        if sch.start_date <= today:
+            started.add(sch.id)
         if subj.final_grade is None:
             if sch.end_date < today:
                 pending.append({"subject_id": subj.id, "name": subj.name, "schedule": sch.name})
             elif sch.start_date <= today:
                 in_progress += 1
+                in_progress_credits += subj.credits or 0
             continue
         band = letter_for(subj.final_grade, scale)
         passed = subj.final_grade >= st.pass_min
@@ -101,6 +120,7 @@ def compute(db: Session, user_id: str, today: date) -> Dict:
     failed = [g for g in graded if not g["passed"]]
 
     m = {
+        "program": {"id": st.id, "name": st.name, "institution": st.institution},
         "scale": scale,
         "pass_min": st.pass_min,
         "has_prior": st.prior_index is not None or bool(st.prior_courses),
@@ -120,12 +140,148 @@ def compute(db: Session, user_id: str, today: date) -> Dict:
         ),
         "in_progress": in_progress,
         "pending_grades": pending,
-        "without_credits": [g["name"] for g in graded if not g["credits"]],
+        "without_credits": [g["name"] for g in graded if g["credits"] is None],
         "subjects": sorted(graded, key=lambda g: -g["grade"]),
         "evolution": evolution,
     }
+    m["plan"] = plan(m, st, cum_pc, in_progress_credits, (st.prior_periods or 0) + len(started))
     m["insights"] = insights(m)
     return m
+
+
+def _normal_cdf(z: float) -> float:
+    return 0.5 * (1 + math.erf(z / math.sqrt(2)))
+
+
+def plan(m: Dict, st: Program, pc: float, in_progress_credits: int, periods_used: int) -> Dict:
+    """Lo que falta de la carrera y, por cada meta (honores o índice deseado), qué índice necesitas
+    en los créditos restantes, cuánto margen tienes y una probabilidad estimada.
+
+    Índice final = (pc + x·R) / (C + R), con pc = puntos-crédito actuales, C = créditos del índice
+    y R = créditos que faltan. Despejando: x = (meta·(C + R) − pc) / R.
+    """
+    scale = sorted(st.scale, key=lambda b: -b["min"])
+    top = scale[0]["points"]
+    pass_band = letter_for(st.pass_min, scale)
+    C = m["credits_attempted"]
+    done = m["credits_passed"] if m["credits_passed"] is not None else C  # aprox. si el historial tuvo reprobadas
+    transfer = st.transfer_credits or 0
+    remaining = max(st.total_credits - transfer - done, 0) if st.total_credits else None
+    with_cr = [s for s in m["subjects"] if s["credits"]]
+    avg_cr = (st.total_credits / st.total_subjects if st.total_credits and st.total_subjects
+              else sum(s["credits"] for s in with_cr) / len(with_cr) if with_cr else None)
+    per_period = [e["credits"] for e in m["evolution"] if e["credits"]]
+    periods_left = (0 if remaining == 0 else
+                    math.ceil(remaining / (sum(per_period) / len(per_period))) if remaining and per_period else None)
+
+    # Probabilidad: tus puntos por materia (ponderados por créditos) como una normal.
+    # ponytail: supone materias independientes con un piso de incertidumbre de 0.15 en tu nivel;
+    # para afinarlo, modelar la tendencia por periodo.
+    mu = sd = None
+    if len(with_cr) >= 3:
+        cr = sum(s["credits"] for s in with_cr)
+        mu = sum(s["points"] * s["credits"] for s in with_cr) / cr
+        sd = max(math.sqrt(sum(s["credits"] * (s["points"] - mu) ** 2 for s in with_cr) / cr), 0.3)
+    elif m["prior"]["index"] is not None:
+        mu, sd = m["prior"]["index"], 0.5
+
+    reqs = requirements(m, st, periods_used, periods_left)
+    eligible = not any(r["status"] == "fail" for r in reqs)
+    current = m["cumulative_index"]
+    targets = [{"name": h["name"], "min": h["min"], "kind": "honor"} for h in sorted(st.honors or [], key=lambda h: -h["min"])]
+    if st.target_index is not None:
+        targets.append({"name": "Índice deseado", "min": st.target_index, "kind": "target"})
+
+    for t in targets:
+        T = t["min"]
+        t.update(needed=None, margins=[], probability=None, final_if_all=None)
+        if remaining is None:
+            t["status"] = "sin_pensum"
+        elif remaining == 0:
+            t["status"] = "logrado" if current is not None and current >= T else "no_alcanzado"
+        else:
+            needed = (T * (C + remaining) - pc) / remaining
+            t["needed"] = round(max(needed, 0), 2)
+            slack = pc + top * remaining - T * (C + remaining)  # puntos-crédito que puedes perder frente a sacar todo A
+            if needed > top + 1e-9:
+                t["status"] = "imposible"
+                t["final_if_all"] = round((pc + top * remaining) / (C + remaining), 2)
+            else:
+                t["status"] = ("asegurado" if needed <= pass_band["points"]
+                               else "en_camino" if current is not None and needed <= current else "exigente")
+                for b in scale[1:]:
+                    if b["min"] < st.pass_min:
+                        break  # reprobar quita los honores: el margen solo usa notas aprobatorias
+                    credits = min(math.floor(slack / (top - b["points"]) + 1e-9), remaining) if top > b["points"] else remaining
+                    t["margins"].append({"letter": b["letter"], "credits": credits,
+                                         "subjects": math.floor(credits / avg_cr) if avg_cr else None})
+                if mu is not None:
+                    n = max(round(remaining / (avg_cr or 3)), 1)
+                    se = math.sqrt(sd ** 2 / n + 0.15 ** 2)
+                    t["probability"] = round(100 * (1 - _normal_cdf((needed - mu) / se)))
+        if t["kind"] == "honor" and not eligible:
+            t["status"], t["probability"] = "descalificado", 0
+    return {
+        "total_credits": st.total_credits,
+        "total_subjects": st.total_subjects,
+        "transfer_credits": transfer,
+        "credits_done": done,
+        "credits_in_progress": in_progress_credits,
+        "credits_remaining": remaining,
+        "subjects_remaining": max(st.total_subjects - m["passed"], 0) if st.total_subjects else None,
+        "progress": round(min((done + transfer) / st.total_credits, 1), 3) if st.total_credits else None,
+        "periods_used": periods_used,
+        "periods_left": periods_left,
+        "max_periods": st.max_periods,
+        "expected_points": round(mu, 2) if mu is not None else None,
+        "eligible": eligible,
+        "requirements": reqs,
+        "targets": targets,
+    }
+
+
+def requirements(m: Dict, st: Program, periods_used: int, periods_left: Optional[int]) -> List[Dict]:
+    """Requisitos de historial para honores. status: ok | fail | warn | unknown."""
+    out = []
+    names = [s["name"] for s in m["subjects"] if not s["passed"]]
+    out.append({
+        "key": "no_failed", "label": "Sin materias reprobadas", "status": "fail" if m["failed"] else "ok",
+        "detail": (("Reprobaste: " + ", ".join(names[:3])) if names else f"El historial tiene {m['failed']} reprobada(s).") if m["failed"]
+        else "Una reprobada anula los honores aunque luego la apruebes.",
+    })
+
+    if st.probation_min is None:
+        out.append({"key": "standing", "label": "Condición académica normal", "status": "unknown", "detail": "Indica el índice mínimo para no caer en prueba."})
+    else:
+        pm = st.probation_min
+        low = [e for e in m["evolution"] if any(v is not None and v < pm for v in (e["period_index"], e["cumulative_index"]))]
+        prior_low = st.prior_index is not None and st.prior_index < pm
+        out.append({
+            "key": "standing", "label": "Condición académica normal", "status": "fail" if low or prior_low else "ok",
+            "detail": f"En {low[0]['name']} quedaste por debajo de {pm:.2f}." if low
+            else f"Tu historial anterior está por debajo de {pm:.2f}." if prior_low
+            else f"Ningún periodo ni acumulado por debajo de {pm:.2f}.",
+        })
+
+    if not st.max_periods:
+        out.append({"key": "time", "label": "Dentro del tiempo reglamentario", "status": "unknown", "detail": "Indica la permanencia máxima en periodos."})
+    else:
+        total = periods_used + (periods_left or 0)
+        status = "fail" if periods_used > st.max_periods else "warn" if periods_left is not None and total > st.max_periods else "ok"
+        out.append({
+            "key": "time", "label": "Dentro del tiempo reglamentario", "status": status,
+            "detail": f"Llevas {periods_used} de {st.max_periods} periodos" + (f"; a tu ritmo terminas en {total}." if periods_left is not None else "."),
+        })
+
+    if not st.total_credits or st.min_institution_pct is None:
+        out.append({"key": "residency", "label": "Créditos cursados en la institución", "status": "unknown", "detail": "Indica los créditos del pénsum y el % mínimo."})
+    else:
+        pct = round(100 * (st.total_credits - (st.transfer_credits or 0)) / st.total_credits)
+        out.append({
+            "key": "residency", "label": "Créditos cursados en la institución", "status": "ok" if pct >= st.min_institution_pct else "fail",
+            "detail": f"{pct}% del pénsum en la institución (mínimo {st.min_institution_pct}%).",
+        })
+    return out
 
 
 def insights(m: Dict) -> List[str]:
@@ -153,4 +309,16 @@ def insights(m: Dict) -> List[str]:
         out.append(f"Faltan las notas de {len(m['pending_grades'])} materia(s) de periodos terminados.")
     if m["without_credits"]:
         out.append(f"{len(m['without_credits'])} materia(s) sin créditos no cuentan en el índice: agrégalos para que sea exacto.")
+    p = m.get("plan")
+    if p and p["credits_remaining"]:
+        left = f"Te faltan {p['credits_remaining']} créditos"
+        if p["subjects_remaining"] is not None:
+            left += f" ({p['subjects_remaining']} materias)"
+        if p["periods_left"]:
+            left += f", unos {p['periods_left']} periodo(s) a tu ritmo"
+        out.append(left + ".")
+        reach = [t for t in p["targets"] if t["status"] in ("asegurado", "en_camino", "exigente")]
+        if reach:
+            t = reach[0]
+            out.append(f"Para {t['name']} ({t['min']:.2f}) necesitas un índice de {t['needed']:.2f} en lo que te falta.")
     return out
