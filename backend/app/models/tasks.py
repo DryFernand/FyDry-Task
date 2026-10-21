@@ -223,6 +223,7 @@ class Subject(Base, TimestampMixin):
     location = Column(String(120), nullable=True)
     link = Column(String(500), nullable=True)
     position = Column(Integer, nullable=False, default=0)
+    final_grade = Column(Float, nullable=True)  # 0-100; letra, puntos y aprobada salen de la escala
 
 
 class SubjectSession(Base, TimestampMixin):
@@ -248,3 +249,28 @@ class ClassAttendance(Base, TimestampMixin):
     user_id = Column(String(36), nullable=False, index=True)
     date = Column(Date, nullable=False)
     status = Column(String(10), nullable=False)  # attended | absent
+
+
+# Escala por defecto (RD, 4 puntos). Se aprueba con pass_min (70): la D da 1 punto pero es reprobada.
+DEFAULT_GRADE_SCALE = [
+    {"letter": "A", "min": 90, "points": 4.0},
+    {"letter": "B", "min": 80, "points": 3.0},
+    {"letter": "C", "min": 70, "points": 2.0},
+    {"letter": "D", "min": 60, "points": 1.0},
+    {"letter": "F", "min": 0, "points": 0.0},
+]
+
+
+class AcademicSettings(Base, TimestampMixin):
+    """Escala de notas del usuario y su historial previo (opción 'resumen manual')."""
+    __tablename__ = "academic_settings"
+
+    user_id = Column(String(36), primary_key=True)
+    scale = Column(JSON, nullable=False, default=lambda: [dict(x) for x in DEFAULT_GRADE_SCALE])
+    pass_min = Column(Float, nullable=False, default=70.0)
+    # Historial anterior a lo registrado en la app (opcional)
+    prior_index = Column(Float, nullable=True)
+    prior_credits = Column(Integer, nullable=True)
+    prior_courses = Column(Integer, nullable=True)
+    prior_passed = Column(Integer, nullable=True)
+    prior_failed = Column(Integer, nullable=True)

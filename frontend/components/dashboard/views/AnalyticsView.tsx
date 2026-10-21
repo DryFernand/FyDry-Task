@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { BarChart3, Flame, GraduationCap, Lightbulb, ListChecks, Loader2, Repeat, Repeat2, Target, Trophy } from "lucide-react";
-import { KindIcon } from "../ItemRows";
+import { ArrowLeft, Award, BarChart3, ChevronRight, Flame, GraduationCap, Lightbulb, ListChecks, Loader2, Repeat, Repeat2, Target, Trophy } from "lucide-react";
+import { statusBadge } from "../Grades";
 import { useLoad } from "../useLoad";
-import { addDays, Analytics, api, CHALLENGE_META, ChallengeAnalytics, ClassAnalytics, formatDay, HabitAnalytics, STATUS_META, todayISO, weekStart } from "@/lib/tasks";
+import { addDays, Analytics, api, CHALLENGE_META, ChallengeAnalytics, ClassAnalytics, formatDay, GradesAnalytics, HabitAnalytics, STATUS_META, todayISO, weekStart } from "@/lib/tasks";
 
 const BRAND = "#6e2234";
 const SLOT_LABEL = { manana: "Mañana (antes de 12)", tarde: "Tarde (12–18)", noche: "Noche (desde 18)", sin_hora: "Sin hora" } as const;
@@ -63,11 +63,53 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
   );
 }
 
+type Section = "general" | "tasks" | "habits" | "challenges" | "classes" | "grades";
+const SECTIONS: { key: Section; title: string; desc: string; icon: typeof BarChart3; tone: string }[] = [
+  { key: "general", title: "Resumen general", desc: "Todo junto y las observaciones clave", icon: Lightbulb, tone: "text-emerald-700 bg-emerald-50" },
+  { key: "tasks", title: "Tareas", desc: "Cumplimiento, días, categorías y lo que pospones", icon: ListChecks, tone: "text-zinc-700 bg-zinc-100" },
+  { key: "habits", title: "Hábitos", desc: "Constancia por hábito y hábitos consolidados", icon: Repeat, tone: "text-emerald-700 bg-emerald-50" },
+  { key: "challenges", title: "Retos", desc: "Logrados, parciales y no logrados", icon: Trophy, tone: "text-amber-700 bg-amber-50" },
+  { key: "classes", title: "Clases", desc: "Asistencia y entregas por materia", icon: GraduationCap, tone: "text-sky-700 bg-sky-50" },
+  { key: "grades", title: "Notas", desc: "Índice, promedio, letras, aprobadas y reprobadas", icon: Award, tone: "text-amber-700 bg-amber-50" },
+];
+
+/** Pantalla previa: eliges qué análisis ver. */
+function Picker({ all, grades, hasClasses, onPick }: { all: Analytics; grades: GradesAnalytics | null; hasClasses: boolean; onPick: (s: Section) => void }) {
+  const headline: Record<Section, [string, string]> = {
+    general: [String(all.overview.active_days), "días activos"],
+    tasks: [pct(all.overview.tasks_rate), `${all.tasks.evaluated} tareas marcadas`],
+    habits: [pct(all.overview.habits_rate), `${all.habits.done} de ${all.habits.expected} veces`],
+    challenges: [pct(all.overview.challenges_rate), `${all.challenges.decided} retos con resultado`],
+    classes: hasClasses ? [pct(all.overview.attendance_rate), "de asistencia"] : ["—", "sin clases en el periodo"],
+    grades: grades?.cumulative_index != null ? [grades.cumulative_index.toFixed(2), `índice · ${grades.courses} materias`] : ["—", "sin notas aún"],
+  };
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+      {SECTIONS.map((x) => (
+        <button key={x.key} type="button" onClick={() => onPick(x.key)} className="group text-left p-5 rounded-3xl bg-white border border-zinc-200/80 hover:border-zinc-300 hover:shadow-lg hover:shadow-emerald-900/5 transition-all cursor-pointer">
+          <div className="flex items-start justify-between gap-3">
+            <span className={`w-10 h-10 rounded-2xl flex items-center justify-center ${x.tone}`}><x.icon className="w-5 h-5" aria-hidden="true" /></span>
+            <ChevronRight className="w-4 h-4 text-zinc-300 group-hover:text-zinc-700 transition-colors" aria-hidden="true" />
+          </div>
+          <h2 className="mt-3 text-base font-bold text-zinc-950">{x.title}</h2>
+          <p className="text-xs text-zinc-500">{x.desc}</p>
+          <div className="mt-3 flex items-baseline gap-1.5">
+            <span className="text-2xl font-bold tabular-nums text-zinc-950">{headline[x.key][0]}</span>
+            <span className="text-[11px] text-zinc-500">{headline[x.key][1]}</span>
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function AnalyticsView({ refreshKey, onError }: { refreshKey: number; onError: (m: string) => void }) {
   const [range, setRange] = useState<RangeKey>("4_weeks");
   const [start, end] = rangeOf(range);
   const { data: all, loading } = useLoad<Analytics>(() => api.analytics(start, end), [start, end], refreshKey, onError);
-  const [tab, setTab] = useState<"tasks" | "habits" | "challenges" | "classes">("tasks");
+  const [section, setSection] = useState<Section | null>(null);
+  const grades = useLoad<GradesAnalytics>(() => api.gradesAnalytics(), [], refreshKey, onError);
+  const meta = section ? SECTIONS.find((x) => x.key === section)! : null;
   const hasClasses = !!all && (all.classes.classes > 0 || all.classes.by_subject.length > 0);
   const m = all?.tasks;
 
@@ -75,15 +117,23 @@ export default function AnalyticsView({ refreshKey, onError }: { refreshKey: num
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700 uppercase tracking-wider">
-            <BarChart3 className="w-3.5 h-3.5" aria-hidden="true" /> Análisis
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-zinc-950">Tu actividad</h1>
+          {section ? (
+            <button type="button" onClick={() => setSection(null)} className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700 uppercase tracking-wider cursor-pointer hover:text-emerald-900">
+              <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" /> Análisis
+            </button>
+          ) : (
+            <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700 uppercase tracking-wider">
+              <BarChart3 className="w-3.5 h-3.5" aria-hidden="true" /> Análisis
+            </div>
+          )}
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-zinc-950">{meta ? meta.title : "¿Qué quieres analizar?"}</h1>
           <p className="text-xs text-zinc-500 mt-0.5">
-            {formatDay(start, { day: "numeric", month: "short" })} – {formatDay(end, { day: "numeric", month: "short" })}
+            {section === "grades"
+              ? "Todo tu historial académico (no depende del periodo)"
+              : `${formatDay(start, { day: "numeric", month: "short" })} – ${formatDay(end, { day: "numeric", month: "short" })}`}
           </p>
         </div>
-        <div className="flex flex-wrap gap-1 p-1 rounded-2xl bg-zinc-100" role="radiogroup" aria-label="Periodo">
+        <div className={`flex flex-wrap gap-1 p-1 rounded-2xl bg-zinc-100 ${section === "grades" ? "hidden" : ""}`} role="radiogroup" aria-label="Periodo">
           {RANGES.map((r) => (
             <button key={r.key} type="button" role="radio" aria-checked={range === r.key} onClick={() => setRange(r.key)} className={`px-3 py-1.5 rounded-xl text-xs font-semibold cursor-pointer ${range === r.key ? "bg-white shadow-xs text-zinc-950" : "text-zinc-500"}`}>
               {r.label}
@@ -96,7 +146,10 @@ export default function AnalyticsView({ refreshKey, onError }: { refreshKey: num
         <div className="py-16 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-zinc-400" /></div>
       ) : (
         <>
-          {/* Resumen general de las 3 secciones */}
+          {section === null && <Picker all={all} grades={grades.data} hasClasses={hasClasses} onPick={setSection} />}
+          {section === "general" && (
+          <>
+          {/* Resumen general de las secciones */}
           <div className={`grid grid-cols-1 sm:grid-cols-3 ${hasClasses ? "lg:grid-cols-4" : ""} gap-3`}>
             <Stat label="Tareas" value={pct(all.overview.tasks_rate)} sub={`${m.evaluated} marcadas · Hecho 100%, A medias 50%`} />
             <Stat label="Hábitos" value={pct(all.overview.habits_rate)} sub={`${all.habits.done} de ${all.habits.expected} veces`} />
@@ -114,19 +167,13 @@ export default function AnalyticsView({ refreshKey, onError }: { refreshKey: num
             </ul>
           </Card>
 
-          <div className="flex flex-wrap gap-1 p-1 rounded-2xl bg-zinc-100 w-fit" role="tablist" aria-label="Sección">
-            {([["tasks", "Tareas"], ["habits", "Hábitos"], ["challenges", "Retos"], ...(hasClasses ? [["classes", "Clases"]] : [])] as [typeof tab, string][]).map(([k, label]) => (
-              <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
-                className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold cursor-pointer ${tab === k ? "bg-white shadow-xs text-zinc-950" : "text-zinc-500"}`}>
-                {k === "classes" ? <GraduationCap className="w-3.5 h-3.5 text-sky-700" /> : <KindIcon kind={k === "tasks" ? "task" : k === "habits" ? "habit" : "challenge"} />} {label}
-              </button>
-            ))}
-          </div>
-
-          {tab === "habits" && <HabitsSection h={all.habits} />}
-          {tab === "challenges" && <ChallengesSection c={all.challenges} />}
-          {tab === "classes" && <ClassesSection k={all.classes} />}
-          {tab === "tasks" && (
+          </>
+          )}
+          {section === "habits" && <HabitsSection h={all.habits} />}
+          {section === "challenges" && <ChallengesSection c={all.challenges} />}
+          {section === "classes" && <ClassesSection k={all.classes} />}
+          {section === "grades" && (grades.data ? <GradesSection g={grades.data} /> : <div className="py-16 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-zinc-400" /></div>)}
+          {section === "tasks" && (
           <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <Stat label="Cumplimiento" value={pct(m.completion_rate)} sub={`${m.evaluated} tareas marcadas`} />
@@ -317,6 +364,82 @@ function ClassesSection({ k }: { k: ClassAnalytics }) {
             </Card>
           )}
         </div>
+      )}
+    </>
+  );
+}
+
+/** Barra del índice (0 a 4 puntos). El valor va en texto. */
+function IndexRow({ label, value, sub, max = 4 }: { label: string; value: number | null; sub?: string; max?: number }) {
+  return (
+    <div className="grid grid-cols-[minmax(0,8rem)_1fr_4rem] sm:grid-cols-[minmax(0,11rem)_1fr_4.5rem] items-center gap-3 py-1" title={`${label}: ${value ?? "—"}`}>
+      <span className="text-xs text-zinc-700 truncate">{label}</span>
+      <div className="h-2.5 rounded-full bg-zinc-100 overflow-hidden">
+        {value !== null && <div className="h-full rounded-r-[4px]" style={{ width: `${Math.max((value / max) * 100, 2)}%`, background: BRAND }} />}
+      </div>
+      <span className="text-xs font-semibold text-zinc-900 tabular-nums text-right">
+        {value === null ? "—" : value.toFixed(2)}
+        {sub && <span className="block text-[10px] font-normal text-zinc-400">{sub}</span>}
+      </span>
+    </div>
+  );
+}
+
+function GradesSection({ g }: { g: GradesAnalytics }) {
+  const totalLetters = Object.values(g.letters).reduce((a, b) => a + b, 0);
+  const maxPoints = Math.max(...g.scale.map((b) => b.points), 4);
+  return (
+    <>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Stat label="Índice acumulado" value={g.cumulative_index?.toFixed(2) ?? "—"} sub={`de ${maxPoints.toFixed(2)}${g.has_prior && g.app_index !== null ? ` · en la app ${g.app_index.toFixed(2)}` : ""}`} />
+        <Stat label="Promedio" value={g.average?.toString() ?? "—"} sub="de tus notas finales (0–100)" />
+        <Stat label="Materias cursadas" value={String(g.courses)} sub={`${g.passed} aprobadas · ${g.failed} reprobadas`} />
+        <Stat label="Créditos" value={g.credits_passed === null ? String(g.credits_attempted) : `${g.credits_passed} / ${g.credits_attempted}`} sub={`${g.credits_passed === null ? "cursados" : "aprobados / cursados"}${g.in_progress ? ` · ${g.in_progress} materia(s) en curso` : ""}`} />
+      </div>
+      <Insights items={g.insights} />
+      {g.subjects.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <Card title="Clasificación por letra" icon={Award}>
+            {Object.entries(g.letters).map(([letter, n]) => {
+              const band = g.scale.find((b) => b.letter === letter);
+              return (
+                <div key={letter} className="grid grid-cols-[3rem_1fr_4rem] items-center gap-3 py-1" title={`${letter}: ${n} materia(s)`}>
+                  <span className="text-sm font-bold text-zinc-900">{letter}<span className="block text-[10px] font-normal text-zinc-400">≥ {band?.min}</span></span>
+                  <div className="h-2.5 rounded-full bg-zinc-100 overflow-hidden">
+                    {n > 0 && <div className="h-full rounded-r-[4px]" style={{ width: `${Math.max((n / totalLetters) * 100, 2)}%`, background: (band?.min ?? 0) >= g.pass_min ? "#16a34a" : "#e11d48" }} />}
+                  </div>
+                  <span className="text-xs font-semibold text-zinc-900 tabular-nums text-right">{n}<span className="block text-[10px] font-normal text-zinc-400">{totalLetters ? Math.round((n / totalLetters) * 100) : 0}%</span></span>
+                </div>
+              );
+            })}
+            <p className="mt-2 text-[11px] text-zinc-400">Verde = aprobada (≥ {g.pass_min}) · Rojo = reprobada</p>
+          </Card>
+          <Card title="Índice por periodo" icon={BarChart3}>
+            {g.evolution.map((e) => <IndexRow key={e.schedule_id} label={e.name} value={e.period_index} sub={`acum. ${e.cumulative_index?.toFixed(2) ?? "—"}`} max={maxPoints} />)}
+            {g.has_prior && <p className="mt-2 text-[11px] text-zinc-400">El acumulado parte de tu historial manual (índice {g.prior.index ?? "—"} con {g.prior.credits ?? 0} créditos).</p>}
+          </Card>
+          <Card title="Tus materias" icon={GraduationCap} className="lg:col-span-2">
+            <ul className="divide-y divide-zinc-100">
+              {g.subjects.map((x) => (
+                <li key={x.subject_id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: x.color }} aria-hidden="true" />
+                  <span className="min-w-0 flex-1 text-sm text-zinc-800 truncate">{x.name}<span className="ml-2 text-[11px] text-zinc-400">{x.schedule}</span></span>
+                  <span className="text-[11px] text-zinc-500">{x.credits != null ? `${x.credits} cr` : "sin créditos"}</span>
+                  <span className="w-20 text-right text-sm font-bold tabular-nums text-zinc-900">{x.grade} · {x.letter}</span>
+                  {statusBadge(x.passed)}
+                </li>
+              ))}
+            </ul>
+          </Card>
+        </div>
+      )}
+      {g.pending_grades.length > 0 && (
+        <Card title="Notas por registrar" icon={Award}>
+          <ul className="space-y-1 text-xs text-zinc-600">
+            {g.pending_grades.map((x) => <li key={x.subject_id}>{x.name} <span className="text-zinc-400">· {x.schedule}</span></li>)}
+          </ul>
+          <p className="mt-2 text-[11px] text-zinc-400">Regístralas en Horario → Notas del periodo.</p>
+        </Card>
       )}
     </>
   );

@@ -9,7 +9,10 @@ from app.api.v1.endpoints.tasks import _owned
 from app.core.database import get_db
 from app.models import ClassAttendance, Schedule, Subject, SubjectSession, TaskItem
 from app.schemas.tasks import (
+    AcademicSettingsIn,
+    AcademicSettingsOut,
     AttendanceIn,
+    GradeIn,
     ScheduleDuplicateIn,
     ScheduleIn,
     ScheduleOut,
@@ -19,6 +22,7 @@ from app.schemas.tasks import (
     SubjectOut,
     TaskOut,
 )
+from app.services import grades as gr
 from app.services import schedules as svc
 
 router = APIRouter()
@@ -61,6 +65,7 @@ def _serialize(db: Session, user_id: str, schedules: List[Schedule], today: date
     for s in sessions:
         by_subject.setdefault(s.subject_id, []).append(s)
 
+    settings = gr.get_settings(db, user_id)
     out = []
     for sch in schedules:
         o = ScheduleOut.model_validate(sch)
@@ -69,9 +74,23 @@ def _serialize(db: Session, user_id: str, schedules: List[Schedule], today: date
             so.sessions = [SessionOut(**SessionOut.model_validate(s).model_dump(exclude={"conflicts"}), conflicts=clashes.get(s.id, [])) for s in by_subject.get(subj.id, [])]
             so.weekly_minutes = sum(svc.minutes(s) for s in by_subject.get(subj.id, []))
             so.assignments = stats[subj.id]
+            if subj.final_grade is not None:
+                so.letter = gr.letter_for(subj.final_grade, settings.scale)["letter"]
+                so.passed = subj.final_grade >= settings.pass_min
             o.subjects.append(so)
         o.weekly_minutes = sum(x.weekly_minutes for x in o.subjects)
         o.credits = sum(x.credits or 0 for x in o.subjects)
+        graded = [x for x in o.subjects if x.final_grade is not None]
+        weighted = [(gr.letter_for(x.final_grade, settings.scale)["points"], x.credits) for x in graded if x.credits]
+        cr = sum(c for _, c in weighted)
+        o.grades = {
+            "graded": len(graded),
+            "total": len(o.subjects),
+            "average": round(sum(x.final_grade for x in graded) / len(graded), 1) if graded else None,
+            "period_index": round(sum(p * c for p, c in weighted) / cr, 2) if cr else None,
+            "passed": sum(1 for x in graded if x.passed),
+            "failed": sum(1 for x in graded if not x.passed),
+        }
         out.append(o)
     return out
 
@@ -238,3 +257,42 @@ def mark_attendance(session_id: str, payload: AttendanceIn, user: CurrentUser = 
 def suggest_end(start_date: date = Query(...), period_type: str = Query(...)):
     end = svc.suggested_end(start_date, period_type)
     return {"end_date": end.isoformat() if end else None}
+
+
+# ============ Notas ============
+@router.put("/subjects/{subject_id}/grade", summary="Nota final de la materia (0-100); null la quita")
+def set_grade(subject_id: str, payload: GradeIn, user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    subj = _owned(db, Subject, subject_id, user.id)
+    subj.final_grade = payload.grade
+    db.commit()
+    st = gr.get_settings(db, user.id)
+    band = gr.letter_for(payload.grade, st.scale) if payload.grade is not None else None
+    return {"subject_id": subj.id, "grade": payload.grade, "letter": band["letter"] if band else None,
+            "passed": payload.grade >= st.pass_min if payload.grade is not None else None}
+
+
+@router.get("/academic/settings", response_model=AcademicSettingsOut)
+def get_academic(user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    return gr.get_settings(db, user.id)
+
+
+@router.put("/academic/settings", response_model=AcademicSettingsOut, summary="Escala de notas e historial previo")
+def update_academic(payload: AcademicSettingsIn, user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    st = gr.get_settings(db, user.id)
+    data = payload.model_dump(exclude_unset=True)
+    if "scale" in data and data["scale"] is not None:
+        st.scale = [dict(b) for b in data.pop("scale")]
+    else:
+        data.pop("scale", None)
+    if data.get("pass_min") is None:
+        data.pop("pass_min", None)
+    for k, v in data.items():
+        setattr(st, k, v)  # los campos prior_* aceptan null para borrar el historial
+    db.commit()
+    db.refresh(st)
+    return st
+
+
+@router.get("/grades/analytics", summary="Índice, promedio, letras, aprobadas y reprobadas")
+def grades_analytics(today: date = Query(...), user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    return gr.compute(db, user.id, today)

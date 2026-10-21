@@ -105,6 +105,9 @@ function ScheduleForm({ target, onClose, onSaved }: { target: ScheduleFormTarget
             <input id="sch-end" type="date" value={end} min={start} onChange={(e) => e.target.value && setEnd(e.target.value)} className={fieldInput} />
           </div>
         </div>
+        {!src && end < todayISO() && (
+          <p className="text-[11px] text-zinc-600 bg-amber-50 border border-amber-200/70 rounded-xl p-2.5">Es un periodo pasado: agrega sus materias con créditos (las clases semanales son opcionales) y registra cada nota final en &quot;Notas del periodo&quot;.</p>
+        )}
         {error && <p className="text-xs text-rose-600 font-medium" role="alert">{error}</p>}
         <button type="submit" hidden />
       </form>

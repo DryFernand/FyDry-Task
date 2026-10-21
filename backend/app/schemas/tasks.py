@@ -347,6 +347,9 @@ class SubjectOut(CoreSchema):
     sessions: List[SessionOut] = []
     weekly_minutes: int = 0
     assignments: dict = {}
+    final_grade: Optional[float] = None
+    letter: Optional[str] = None
+    passed: Optional[bool] = None
 
 
 class ScheduleOut(CoreSchema):
@@ -360,8 +363,63 @@ class ScheduleOut(CoreSchema):
     subjects: List[SubjectOut] = []
     weekly_minutes: int = 0
     credits: int = 0
+    grades: dict = {}  # resumen de notas del periodo: índice, promedio, cuántas con nota
 
 
 class AttendanceIn(BaseModel):
     date: dt.date
     status: Optional[Literal["attended", "absent"]] = None  # None = desmarcar
+
+
+# ---------- Notas ----------
+class GradeIn(BaseModel):
+    grade: Optional[float] = Field(default=None, ge=0, le=100)  # None = quitar la nota
+
+
+class GradeBand(BaseModel):
+    letter: str = Field(min_length=1, max_length=3)
+    min: float = Field(ge=0, le=100)
+    points: float = Field(ge=0, le=5)
+
+
+class AcademicSettingsIn(BaseModel):
+    scale: Optional[List[GradeBand]] = Field(default=None, min_length=2, max_length=12)
+    pass_min: Optional[float] = Field(default=None, ge=0, le=100)
+    prior_index: Optional[float] = Field(default=None, ge=0, le=5)
+    prior_credits: Optional[int] = Field(default=None, ge=0, le=1000)
+    prior_courses: Optional[int] = Field(default=None, ge=0, le=500)
+    prior_passed: Optional[int] = Field(default=None, ge=0, le=500)
+    prior_failed: Optional[int] = Field(default=None, ge=0, le=500)
+
+    @field_validator("scale")
+    @classmethod
+    def check_scale(cls, v):
+        if v is None:
+            return v
+        letters = [b.letter.strip().upper() for b in v]
+        if len(set(letters)) != len(letters):
+            raise ValueError("Cada letra de la escala debe ser única.")
+        if not any(b.min == 0 for b in v):
+            raise ValueError("La escala necesita un tramo que empiece en 0.")
+        mins = [b.min for b in v]
+        if len(set(mins)) != len(mins):
+            raise ValueError("Dos tramos no pueden empezar en la misma nota.")
+        return sorted([GradeBand(letter=b.letter.strip().upper(), min=b.min, points=b.points) for b in v], key=lambda b: -b.min)
+
+    @model_validator(mode="after")
+    def check_prior(self):
+        if self.prior_courses is not None and (self.prior_passed or 0) + (self.prior_failed or 0) > self.prior_courses:
+            raise ValueError("Aprobadas + reprobadas no puede ser mayor que las materias cursadas.")
+        if self.prior_index is not None and not self.prior_credits:
+            raise ValueError("Para usar tu índice anterior indica también los créditos cursados.")
+        return self
+
+
+class AcademicSettingsOut(CoreSchema):
+    scale: List[dict]
+    pass_min: float
+    prior_index: Optional[float]
+    prior_credits: Optional[int]
+    prior_courses: Optional[int]
+    prior_passed: Optional[int]
+    prior_failed: Optional[int]

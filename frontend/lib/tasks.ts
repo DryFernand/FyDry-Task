@@ -189,6 +189,9 @@ export interface Subject {
   sessions: ClassSession[];
   weekly_minutes: number;
   assignments: { total: number; done: number; pending: number; overdue: number; next_date: string | null; next_exam: string | null };
+  final_grade: number | null;
+  letter: string | null;
+  passed: boolean | null;
 }
 
 export interface SubjectInput {
@@ -214,6 +217,7 @@ export interface Schedule {
   subjects: Subject[];
   weekly_minutes: number;
   credits: number;
+  grades: { graded: number; total: number; average: number | null; period_index: number | null; passed: number; failed: number };
 }
 
 export interface ScheduleInput {
@@ -240,6 +244,64 @@ export interface ClassOccurrence {
   link: string | null;
   teacher: string | null;
   attendance: AttendanceStatus | null;
+}
+
+// ============ Notas ============
+export interface GradeBand {
+  letter: string;
+  min: number;
+  points: number;
+}
+
+export interface AcademicSettings {
+  scale: GradeBand[];
+  pass_min: number;
+  prior_index: number | null;
+  prior_credits: number | null;
+  prior_courses: number | null;
+  prior_passed: number | null;
+  prior_failed: number | null;
+}
+
+export interface GradedSubject {
+  subject_id: string;
+  name: string;
+  color: string;
+  schedule_id: string;
+  schedule: string;
+  grade: number;
+  letter: string;
+  points: number;
+  credits: number | null;
+  passed: boolean;
+}
+
+export interface GradesAnalytics {
+  scale: GradeBand[];
+  pass_min: number;
+  has_prior: boolean;
+  prior: { index: number | null; credits: number | null; courses: number | null; passed: number | null; failed: number | null };
+  cumulative_index: number | null;
+  app_index: number | null;
+  average: number | null;
+  letters: Record<string, number>;
+  courses: number;
+  passed: number;
+  failed: number;
+  credits_attempted: number;
+  credits_passed: number | null;
+  in_progress: number;
+  pending_grades: { subject_id: string; name: string; schedule: string }[];
+  without_credits: string[];
+  subjects: GradedSubject[];
+  evolution: { schedule_id: string; name: string; start_date: string; end_date: string; subjects: number; credits: number; period_index: number | null; average: number; cumulative_index: number | null }[];
+  insights: string[];
+}
+
+/** Letra según la escala (igual que el backend). */
+export function letterFor(grade: number, scale: GradeBand[]): GradeBand {
+  const sorted = [...scale].sort((a, b) => b.min - a.min);
+  return sorted.find((b) => grade >= b.min) ?? sorted[sorted.length - 1];
 }
 
 export const hoursLabel = (minutes: number) => {
@@ -485,6 +547,10 @@ export const api = {
   updateSubject: (id: string, data: SubjectInput) => send<Schedule>(`/subjects/${id}${qs({ today: todayISO() })}`, "PUT", data),
   deleteSubject: (id: string) => send<null>(`/subjects/${id}`, "DELETE"),
   subjectAssignments: (id: string) => send<Task[]>(`/subjects/${id}/assignments`),
+  setGrade: (subjectId: string, grade: number | null) => send<{ letter: string | null; passed: boolean | null }>(`/subjects/${subjectId}/grade`, "PUT", { grade }),
+  academicSettings: () => send<AcademicSettings>("/academic/settings"),
+  saveAcademicSettings: (data: Partial<AcademicSettings>) => send<AcademicSettings>("/academic/settings", "PUT", data),
+  gradesAnalytics: () => send<GradesAnalytics>(`/grades/analytics${qs({ today: todayISO() })}`),
   markAttendance: (sessionId: string, date: string, status: AttendanceStatus | null) => send<unknown>(`/sessions/${sessionId}/attendance`, "PUT", { date, status }),
 
   challenges: (start: string, end: string) => send<Challenge[]>(`/challenges${qs({ start, end })}`),

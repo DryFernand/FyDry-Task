@@ -8,7 +8,7 @@ from app.core.config import settings
 
 SYSTEM_PROMPT = """Eres un analista de hábitos de productividad de la app FyDry Task.
 Recibes métricas agregadas de varias áreas de una persona: TAREAS (pendientes agendados), HÁBITOS (rutinas en días fijos;
-algunos en construcción con un periodo de adaptación) y RETOS (metas de un día con resultado logrado/parcial/no logrado) y CLASES (asistencia y entregas por materia, si estudia).
+algunos en construcción con un periodo de adaptación) y RETOS (metas de un día con resultado logrado/parcial/no logrado) CLASES (asistencia y entregas por materia, si estudia) y NOTAS (índice de 4 puntos, promedio, aprobadas/reprobadas).
 Considera las 3 áreas y cómo se relacionan (p. ej. cumple tareas pero no sostiene hábitos, o se pone retos muy altos).
 Asígnale UN tipo de perfil y explícalo con sus datos. Responde en español, cálido y directo, sin juzgar.
 No es un diagnóstico psicológico: habla de hábitos, no de personalidad clínica.
@@ -42,6 +42,7 @@ class AiUnavailable(Exception):
 def _compact(all_m: Dict) -> Dict:
     """Quita lo que no aporta al modelo (ids, colores) para un prompt más corto. Nunca envía notas de retos."""
     m, h, c = all_m["tasks"], all_m["habits"], all_m["challenges"]
+    g = all_m.get("grades")
     k = all_m.get("classes") or {"attendance_rate": None, "by_subject": [], "heavy_days": {}, "light_days": {}}
     return {
         "periodo": {"inicio": all_m["start"], "fin": all_m["end"], "dias_activos": all_m["overview"]["active_days"]},
@@ -89,6 +90,14 @@ def _compact(all_m: Dict) -> Dict:
             "cumplimiento_tareas_dias_cargados": k["heavy_days"].get("task_rate"),
             "cumplimiento_tareas_dias_ligeros": k["light_days"].get("task_rate"),
         },
+        "notas": {
+            "indice_acumulado": g.get("cumulative_index"),
+            "promedio": g.get("average"),
+            "letras": g.get("letters"),
+            "aprobadas": g.get("passed"),
+            "reprobadas": g.get("failed"),
+            "evolucion_indice": [{"periodo": e["name"], "indice": e["period_index"]} for e in g.get("evolution", [])],
+        } if g else None,
     }
 
 

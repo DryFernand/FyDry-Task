@@ -11,6 +11,7 @@ from app.models import TaskAiProfile
 from app.schemas.tasks import ProfileOut
 from app.services import ai_profile
 from app.services.analytics import compute_all
+from app.services import grades
 
 router = APIRouter()
 
@@ -62,6 +63,7 @@ async def generate_profile(
                 f"(mínimo {MIN_SPAN_DAYS} y {MIN_ACTIVE_DAYS})."
             ),
         )
+    metrics["grades"] = grades.compute(db, user.id, today)
     try:
         profile = await run_in_threadpool(ai_profile.generate, metrics)
     except ai_profile.AiUnavailable as exc:
