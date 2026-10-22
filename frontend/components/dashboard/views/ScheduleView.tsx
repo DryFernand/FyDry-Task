@@ -4,8 +4,7 @@ import { useState } from "react";
 import { AlertTriangle, Archive, ArchiveRestore, Award, Copy, GraduationCap, History, MapPin, MoreHorizontal, Pencil, Plus, Trash2, User } from "lucide-react";
 import { useDash } from "../DashContext";
 import { GradesPanel } from "../Grades";
-import ProgramModal from "../ProgramModal";
-import { api, formatDay, hoursLabel, PERIOD_META, Program, Schedule, Subject, todayISO, WEEKDAY_LONG, WEEKDAY_SHORT } from "@/lib/tasks";
+import { api, formatDay, hoursLabel, PERIOD_META, Schedule, Subject, todayISO, WEEKDAY_LONG, WEEKDAY_SHORT } from "@/lib/tasks";
 
 const HOUR_PX = 52;
 const toMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
@@ -199,8 +198,6 @@ export default function ScheduleView() {
   const archived = schedules.filter((s) => s.is_archived);
   const [selected, setSelected] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
-  // undefined = cerrado, null = carrera nueva
-  const [programEdit, setProgramEdit] = useState<Program | null | undefined>(undefined);
   const current = schedules.find((s) => s.id === selected) ?? visible.find((s) => s.start_date <= today && today <= s.end_date) ?? visible[0] ?? archived[0];
 
   return (
@@ -211,7 +208,7 @@ export default function ScheduleView() {
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-zinc-950">Tus clases</h1>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => setProgramEdit(program)} disabled={!program} title="Pénsum, metas de honores, historial y escala de notas" className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-2xl border border-zinc-200 bg-white text-xs font-semibold text-zinc-700 hover:bg-zinc-50 cursor-pointer">
+          <button type="button" onClick={() => actions.editProgram(program)} disabled={!program} title="Pénsum, metas de honores, historial y escala de notas" className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-2xl border border-zinc-200 bg-white text-xs font-semibold text-zinc-700 hover:bg-zinc-50 cursor-pointer">
             <Award className="w-3.5 h-3.5 text-amber-600" /> Carrera e historial
           </button>
           <button type="button" onClick={() => actions.newSchedule(program?.id)} title="Registra un cuatrimestre o semestre pasado con sus materias y notas" className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-2xl border border-zinc-200 bg-white text-xs font-semibold text-zinc-700 hover:bg-zinc-50 cursor-pointer">
@@ -232,7 +229,7 @@ export default function ScheduleView() {
               {p.name}{p.institution && <span className="font-normal opacity-80"> · {p.institution}</span>}
             </button>
           ))}
-          <button type="button" onClick={() => setProgramEdit(null)} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-emerald-700 hover:bg-emerald-50 cursor-pointer">
+          <button type="button" onClick={() => actions.editProgram(null)} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-emerald-700 hover:bg-emerald-50 cursor-pointer">
             <Plus className="w-3.5 h-3.5" /> Carrera
           </button>
         </div>
@@ -313,7 +310,6 @@ export default function ScheduleView() {
           )}
         </>
       )}
-      <ProgramModal program={programEdit} onClose={() => setProgramEdit(undefined)} />
     </div>
   );
 }

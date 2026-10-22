@@ -147,6 +147,11 @@ export const ASSIGNMENT_META: Record<AssignmentType, { label: string; emoji: str
 };
 
 /** Fin sugerido: mismo día N meses después, menos un día (igual que el backend). */
+/** Tipos de periodo que puede tener una carrera, con su nombre en plural para contar. */
+export const PROGRAM_PERIODS: Record<Exclude<PeriodType, "verano" | "personalizado">, string> = {
+  bimestral: "bimestres", trimestral: "trimestres", cuatrimestral: "cuatrimestres", semestral: "semestres", anual: "años",
+};
+
 export function suggestedEnd(start: string, type: PeriodType): string | null {
   const months = PERIOD_META[type].months;
   if (!months) return null;
@@ -225,7 +230,7 @@ export interface Schedule {
 export interface ScheduleInput {
   name: string;
   program_id?: string | null;
-  period_type: PeriodType;
+  period_type?: PeriodType;
   start_date: string;
   end_date?: string | null;
 }
@@ -300,6 +305,7 @@ export interface Program {
   total_credits: number | null;
   total_subjects: number | null;
   transfer_credits: number | null;
+  period_type: PeriodType;
   plan_periods: number | null;
   max_credits_per_period: number | null;
   goal_end_date: string | null;
@@ -363,6 +369,7 @@ export interface GradesPlan {
   } | null;
   max_periods: number | null;
   expected_points: number | null;
+  max_index: number | null;
   eligible: boolean;
   requirements: { key: string; label: string; status: "ok" | "fail" | "warn" | "unknown"; detail: string }[];
   targets: PlanTarget[];
@@ -657,7 +664,7 @@ export const api = {
   setGrade: (subjectId: string, grade: number | null) => send<{ letter: string | null; passed: boolean | null }>(`/subjects/${subjectId}/grade`, "PUT", { grade }),
   programs: () => send<Program[]>("/programs"),
   createProgram: (data: Partial<Program>) => send<Program>("/programs", "POST", data),
-  updateProgram: (id: string, data: Partial<Program>) => send<Program>(`/programs/${id}`, "PUT", data),
+  updateProgram: (id: string, data: Partial<Program>) => send<Program>(`/programs/${id}${qs({ today: todayISO() })}`, "PUT", data),
   deleteProgram: (id: string) => send<null>(`/programs/${id}`, "DELETE"),
   courses: (programId: string) => send<Curriculum>(`/programs/${programId}/courses${qs({ today: todayISO() })}`),
   saveCourses: (programId: string, courses: Pick<Course, "code" | "name" | "credits" | "term" | "prereqs" | "coreqs" | "done">[]) =>

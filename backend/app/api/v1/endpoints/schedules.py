@@ -105,16 +105,17 @@ def list_schedules(today: date = Query(...), user: CurrentUser = Depends(get_cur
     return _serialize(db, user.id, rows, today)
 
 
-def _dates(payload) -> tuple:
-    end = payload.end_date or svc.suggested_end(payload.start_date, payload.period_type)
+def _dates(payload, period_type: str) -> tuple:
+    end = payload.end_date or svc.suggested_end(payload.start_date, period_type)
     return payload.start_date, end
 
 
 @router.post("/schedules", response_model=ScheduleOut, status_code=201)
 def create_schedule(payload: ScheduleIn, today: date = Query(...), user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
-    start, end = _dates(payload)
-    sch = Schedule(user_id=user.id, name=payload.name.strip(), program_id=gr.get_program(db, user.id, payload.program_id).id,
-                   period_type=payload.period_type, start_date=start, end_date=end)
+    prog = gr.get_program(db, user.id, payload.program_id)
+    ptype = payload.period_type or prog.period_type  # sin tipo, el de la carrera
+    start, end = _dates(payload, ptype)
+    sch = Schedule(user_id=user.id, name=payload.name.strip(), program_id=prog.id, period_type=ptype, start_date=start, end_date=end)
     db.add(sch)
     db.commit()
     return _serialize(db, user.id, [sch], today)[0]
@@ -148,9 +149,10 @@ def delete_schedule(sid: str, user: CurrentUser = Depends(get_current_user), db:
 @router.post("/schedules/{sid}/duplicate", response_model=ScheduleOut, status_code=201, summary="Copia materias y clases a un periodo nuevo")
 def duplicate_schedule(sid: str, payload: ScheduleDuplicateIn, today: date = Query(...), user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
     src = _owned(db, Schedule, sid, user.id)
-    start, end = _dates(payload)
-    new = Schedule(user_id=user.id, name=payload.name.strip(), program_id=gr.get_program(db, user.id, payload.program_id or src.program_id).id,
-                   period_type=payload.period_type, start_date=start, end_date=end)
+    prog = gr.get_program(db, user.id, payload.program_id or src.program_id)
+    ptype = payload.period_type or prog.period_type
+    start, end = _dates(payload, ptype)
+    new = Schedule(user_id=user.id, name=payload.name.strip(), program_id=prog.id, period_type=ptype, start_date=start, end_date=end)
     db.add(new)
     db.flush()
     for subj in db.query(Subject).filter(Subject.schedule_id == src.id).all():
@@ -323,11 +325,23 @@ def create_program(payload: ProgramIn, user: CurrentUser = Depends(get_current_u
 
 
 @router.put("/programs/{pid}", response_model=ProgramOut, summary="Datos, escala, historial, pénsum y metas de la carrera")
-def update_program(pid: str, payload: ProgramIn, user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+def update_program(pid: str, payload: ProgramIn, today: Optional[date] = Query(default=None),
+                   user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
     st = gr.get_program(db, user.id, pid)
     _apply_program(st, payload)
     if st.total_credits and st.transfer_credits and st.transfer_credits > st.total_credits:
+        db.rollback()
         raise HTTPException(status_code=422, detail="Los créditos convalidados no pueden superar los del pénsum.")
+    if st.target_index is not None:
+        # Mismo cálculo que los honores: el índice deseado tiene que ser alcanzable con lo que falta
+        db.flush()
+        pl = gr.compute(db, user.id, today or date.today(), st.id)["plan"]
+        t = next(x for x in pl["targets"] if x["kind"] == "target")
+        if t["status"] in ("imposible", "no_alcanzado"):
+            target, best = st.target_index, pl["max_index"]
+            db.rollback()
+            raise HTTPException(status_code=422, detail=f"El índice deseado {target:.2f} está fuera de tu alcance: "
+                                                        f"aun con todo A llegarías a {best:.2f}. Pon una meta de {best:.2f} o menos.")
     db.commit()
     db.refresh(st)
     return st

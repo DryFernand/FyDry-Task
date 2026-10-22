@@ -13,6 +13,7 @@ import TaskFormModal, { TaskFormTarget } from "./TaskFormModal";
 import HabitFormModal, { HabitFormTarget } from "./HabitFormModal";
 import { ChallengeFormModal, ChallengeFormTarget, ChallengeResultModal } from "./ChallengeModals";
 import DayCloseModal from "./DayCloseModal";
+import ProgramModal from "./ProgramModal";
 import { ScheduleFormModal, ScheduleFormTarget, SubjectDetailModal, SubjectFormModal, SubjectFormTarget } from "./ScheduleModals";
 import SettingsModal from "./SettingsModal";
 import { Dash, DashContext } from "./DashContext";
@@ -129,6 +130,8 @@ export default function DashboardLayout() {
   const [resultTarget, setResultTarget] = useState<Challenge | null>(null);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
+  // undefined = cerrado, null = carrera nueva
+  const [programEdit, setProgramEdit] = useState<Program | null | undefined>(undefined);
   const [scheduleTarget, setScheduleTarget] = useState<ScheduleFormTarget | null>(null);
   const [subjectTarget, setSubjectTarget] = useState<SubjectFormTarget | null>(null);
   const [subjectDetail, setSubjectDetail] = useState<Subject | null>(null);
@@ -260,6 +263,7 @@ export default function DashboardLayout() {
         create: (kind, date) =>
           kind === "task" ? setFormTarget({ kind: "new", date }) : kind === "habit" ? setHabitTarget({ kind: "new", mode: "building", date }) : setChallengeTarget({ kind: "new", date }),
         newSchedule: (programId) => setScheduleTarget({ kind: "new", programId }),
+        editProgram: (p) => setProgramEdit(p),
         editSchedule: (schedule) => setScheduleTarget({ kind: "edit", schedule }),
         duplicateSchedule: (schedule) => setScheduleTarget({ kind: "duplicate", schedule }),
         newSubject: (scheduleId) => setSubjectTarget({ kind: "new", scheduleId }),
@@ -419,6 +423,7 @@ export default function DashboardLayout() {
       />
       <HabitFormModal target={habitTarget} categories={categories} onClose={() => setHabitTarget(null)} onSaved={bump} />
       <ChallengeFormModal target={challengeTarget} categories={categories} onClose={() => setChallengeTarget(null)} onSaved={bump} />
+      <ProgramModal program={programEdit} onClose={() => setProgramEdit(undefined)} />
       <ScheduleFormModal target={scheduleTarget} onClose={() => setScheduleTarget(null)} onSaved={reloadSchedules} />
       <SubjectFormModal target={subjectTarget} onClose={() => setSubjectTarget(null)} onSaved={reloadSchedules} />
       <SubjectDetailModal subject={subjectDetail} onClose={() => setSubjectDetail(null)} />

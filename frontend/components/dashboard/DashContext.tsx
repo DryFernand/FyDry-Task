@@ -16,6 +16,8 @@ export interface DashActions {
   /** "+ Agregar" de un día: abre el formulario del tipo elegido con ese día. */
   create: (kind: ItemKind, date: string) => void;
   newSchedule: (programId?: string) => void;
+  /** Abre la carrera (null = nueva). */
+  editProgram: (p: Program | null) => void;
   editSchedule: (s: Schedule) => void;
   duplicateSchedule: (s: Schedule) => void;
   newSubject: (scheduleId: string) => void;

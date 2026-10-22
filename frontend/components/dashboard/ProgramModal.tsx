@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { Award, BookOpen, ClipboardPaste, GraduationCap, History, Landmark, Loader2, Plus, Target, Trash2, X } from "lucide-react";
 import { fieldInput, fieldLabel } from "./TaskFormModal";
 import { useDash } from "./DashContext";
-import { api, Course, CourseStatus, GradeBand, HonorLevel, Program, todayISO } from "@/lib/tasks";
+import { api, Course, CourseStatus, GradeBand, HonorLevel, PERIOD_META, Program, PROGRAM_PERIODS, todayISO } from "@/lib/tasks";
 
 const num = (v: string) => (v.trim() === "" ? null : Number(v));
 const str = (x: number | null | undefined) => (x == null ? "" : String(x));
@@ -54,7 +54,16 @@ function parsePaste(text: string): Row[] {
 export default function ProgramModal({ program, onClose }: { program: Program | null | undefined; onClose: () => void }) {
   return (
     <AnimatePresence>
-      {program !== undefined && <ProgramForm key={program?.id ?? "new"} program={program} onClose={onClose} />}
+      {program !== undefined && (
+        <motion.div key="program-modal" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs"
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+          <motion.div role="dialog" aria-modal="true" aria-label={program ? `Carrera ${program.name}` : "Nueva carrera"}
+            initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+            className="w-full max-w-4xl bg-white rounded-3xl border border-zinc-200 shadow-2xl overflow-hidden flex flex-col md:flex-row h-[90dvh] md:h-[min(680px,90vh)]">
+            <ProgramForm key={program?.id ?? "new"} program={program} onClose={onClose} />
+          </motion.div>
+        </motion.div>
+      )}
     </AnimatePresence>
   );
 }
@@ -76,6 +85,8 @@ function ProgramForm({ program, onClose }: { program: Program | null; onClose: (
     prior_index: str(p?.prior_index), prior_credits: str(p?.prior_credits), prior_courses: str(p?.prior_courses), prior_passed: str(p?.prior_passed), prior_failed: str(p?.prior_failed),
   });
   const [goalDate, setGoalDate] = useState(p?.goal_end_date ?? "");
+  const [periodType, setPeriodType] = useState<keyof typeof PROGRAM_PERIODS>((p?.period_type as keyof typeof PROGRAM_PERIODS) ?? "cuatrimestral");
+  const [maxIndex, setMaxIndex] = useState<number | null>(null);
   const [rows, setRows] = useState<Row[] | null>(p ? null : []);
   const [status, setStatus] = useState<Record<string, Course>>({});
   const [pensumDirty, setPensumDirty] = useState(false);
@@ -92,6 +103,7 @@ function ProgramForm({ program, onClose }: { program: Program | null; onClose: (
 
   useEffect(() => {
     if (!p) return;
+    api.gradesAnalytics(p.id).then((g) => setMaxIndex(g.plan.max_index)).catch(() => setMaxIndex(null));
     api.courses(p.id).then((r) => {
       setRows(r.courses.map(toRow));
       setStatus(Object.fromEntries(r.courses.map((c) => [c.code, c])));
@@ -112,7 +124,9 @@ function ProgramForm({ program, onClose }: { program: Program | null; onClose: (
       reloadSchedules();
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "No se pudo guardar.");
+      const msg = e instanceof Error ? e.message : "No se pudo guardar.";
+      if (msg.includes("índice deseado")) setTab("goals");
+      setError(msg);
     } finally {
       setSaving(false);
     }
@@ -122,6 +136,11 @@ function ProgramForm({ program, onClose }: { program: Program | null; onClose: (
     if (!name.trim()) {
       setTab("general");
       return setError("Ponle un nombre a la carrera, ej. \"Desarrollo de Software\".");
+    }
+    const target = num(f.target_index);
+    if (target !== null && maxIndex !== null && target > maxIndex + 1e-9) {
+      setTab("goals");
+      return setError(`Ese índice deseado está fuera de tu alcance: aun con todo A llegarías a ${maxIndex.toFixed(2)}.`);
     }
     const filled = (rows ?? []).filter((r) => r.code.trim() || r.name.trim());
     const bad = filled.find((r) => !r.code.trim() || !r.name.trim());
@@ -137,6 +156,7 @@ function ProgramForm({ program, onClose }: { program: Program | null; onClose: (
       honors: honors.filter((h) => h.name.trim()).map((h) => ({ name: h.name.trim(), min: Number(h.min) })),
       ...Object.fromEntries(Object.entries(f).map(([k, v]) => [k, num(v)])),
       goal_end_date: goalDate || null,
+      period_type: periodType,
     };
     const courses = filled.map((r) => ({ code: r.code.trim(), name: r.name.trim(), credits: num(r.credits), term: num(r.term), prereqs: codes(r.prereqs), coreqs: codes(r.coreqs), done: r.done }));
     return run(async () => {
@@ -158,11 +178,7 @@ function ProgramForm({ program, onClose }: { program: Program | null; onClose: (
   const pensumCredits = (rows ?? []).reduce((a, r) => a + (Number(r.credits) || 0), 0);
 
   return (
-    <motion.div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs"
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <motion.div role="dialog" aria-modal="true" aria-label={p ? `Carrera ${p.name}` : "Nueva carrera"}
-        initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-        className="w-full max-w-4xl bg-white rounded-3xl border border-zinc-200 shadow-2xl overflow-hidden flex flex-col md:flex-row h-[90dvh] md:h-[min(680px,90vh)]">
+    <>
         {/* Pestañas como en Configuración: a la izquierda en escritorio, arriba con scroll en el teléfono */}
         <div className="w-full md:w-56 bg-zinc-50 border-b md:border-b-0 md:border-r border-zinc-200/80 p-2.5 md:p-4 shrink-0 flex flex-col justify-between">
           <div className="space-y-0 md:space-y-4">
@@ -207,10 +223,22 @@ function ProgramForm({ program, onClose }: { program: Program | null; onClose: (
                   </label>
                 </div>
                 {hint("Con los créditos totales se calcula lo que te falta y qué índice necesitas para tus metas. Si cargas el pénsum y dejas vacíos créditos y materias, se toman de ahí.")}
+                <div>
+                  <span className={fieldLabel}>Tipo de periodo</span>
+                  <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Tipo de periodo de la carrera">
+                    {(Object.keys(PROGRAM_PERIODS) as (keyof typeof PROGRAM_PERIODS)[]).map((t) => (
+                      <button key={t} type="button" role="radio" aria-checked={periodType === t} onClick={() => setPeriodType(t)}
+                        className={`px-3 py-1.5 rounded-xl border text-xs font-semibold cursor-pointer ${periodType === t ? "bg-emerald-700 border-emerald-700 text-white" : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"}`}>
+                        {PERIOD_META[t].label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-1 text-[10px] text-zinc-400">Los horarios nuevos de esta carrera lo toman solos, y la meta de tiempo cuenta en {PROGRAM_PERIODS[periodType]}.</p>
+                </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {numField("total_credits", "Créditos de la carrera", "1", rows?.length ? `Pénsum: ${pensumCredits}` : undefined)}
                   {numField("total_subjects", "Materias de la carrera", "1", rows?.length ? `Pénsum: ${rows.length}` : undefined)}
-                  {numField("plan_periods", "Duración (periodos)", "1", "Ej. 7 cuatrimestres")}
+                  {numField("plan_periods", `Duración (${PROGRAM_PERIODS[periodType]})`, "1", `Ej. 7 ${PROGRAM_PERIODS[periodType]}`)}
                   {numField("transfer_credits", "Créditos convalidados", "1", "Avanzan el pénsum, no el índice")}
                 </div>
               </>
@@ -293,7 +321,9 @@ function ProgramForm({ program, onClose }: { program: Program | null; onClose: (
                   <label className="block">
                     <span className={fieldLabel}>Índice deseado (opcional)</span>
                     <input type="number" min={0} max={5} step={0.01} value={f.target_index} onChange={(e) => setF((x) => ({ ...x, target_index: e.target.value }))} className={small} />
-                    <span className="block mt-0.5 text-[10px] text-zinc-400">Mismo cálculo que los honores, sin sus requisitos</span>
+                    <span className={`block mt-0.5 text-[10px] ${maxIndex !== null && num(f.target_index) !== null && num(f.target_index)! > maxIndex ? "text-rose-600 font-semibold" : "text-zinc-400"}`}>
+                      {maxIndex !== null ? `Lo más alto que puedes llegar: ${maxIndex.toFixed(2)} (todo A en lo que falta)` : "Mismo cálculo que los honores, sin sus requisitos"}
+                    </span>
                   </label>
                   <label className="block">
                     <span className={fieldLabel}>Terminar la carrera para (opcional)</span>
@@ -372,7 +402,6 @@ function ProgramForm({ program, onClose }: { program: Program | null; onClose: (
             </div>
           </div>
         </div>
-      </motion.div>
-    </motion.div>
+    </>
   );
 }

@@ -145,6 +145,23 @@ ok(c.delete(f"{API}/schedules/{cur['id']}"), 204)
 assert any("Te faltan 28 créditos (7 materias)" in s for s in ok(c.get(f"{API}/grades/analytics", params=T))["insights"])
 assert (pl["periods_in_app"], pl["prior_periods"], pl["time_goal"]) == (1, 0, None)
 
+# Índice deseado fuera de alcance: con todo A llegarías a (44 + 4·28) / 40 = 3.90 -> no se guarda nada
+assert pl["max_index"] == 3.9
+r = c.put(f"{API}/programs/{CID}", params=T, json={"name": "Otro nombre", "target_index": 3.95})
+assert r.status_code == 422 and "3.90" in r.json()["detail"], r.text
+assert ok(c.get(f"{API}/programs"))[0]["name"] == "Software", "si la meta no cabe, no se guarda ningún cambio"
+ok(c.put(f"{API}/programs/{CID}", params=T, json={"target_index": 3.9}))
+ok(c.put(f"{API}/programs/{CID}", params=T, json={"target_index": 3.0}))
+
+# Tipo de periodo de la carrera: los horarios nuevos lo toman solos
+assert ok(c.get(f"{API}/programs"))[0]["period_type"] == "cuatrimestral"
+assert c.put(f"{API}/programs/{CID}", json={"period_type": "personalizado"}).status_code == 422
+ok(c.put(f"{API}/programs/{CID}", json={"period_type": "semestral"}))
+sem = ok(c.post(f"{API}/schedules", params=T, json={"name": "2027-1", "start_date": "2027-01-04"}), 201)
+assert (sem["period_type"], sem["end_date"]) == ("semestral", "2027-07-03"), sem
+ok(c.delete(f"{API}/schedules/{sem['id']}"), 204)
+ok(c.put(f"{API}/programs/{CID}", json={"period_type": "cuatrimestral"}))
+
 # Ritmo frente al pénsum: 12 cr/periodo, pero el límite es 10 -> 3 periodos más; 1 + 3 = 4 del pénsum
 ok(c.put(f"{API}/programs/{CID}", json={"plan_periods": 4, "max_credits_per_period": 10}))
 pace = ok(c.get(f"{API}/grades/analytics", params=T))["plan"]["pace"]

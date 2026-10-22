@@ -22,10 +22,10 @@ def get_programs(db: Session, user_id: str) -> List[Program]:
     if not rows:
         rows = [Program(user_id=user_id, name="Mi carrera")]
         db.add(rows[0])
-        db.flush()
+        db.commit()
     # Horarios sin carrera (creados antes de que existieran) pasan a la principal
-    db.query(Schedule).filter(Schedule.user_id == user_id, Schedule.program_id.is_(None)).update({"program_id": rows[0].id})
-    db.commit()
+    if db.query(Schedule).filter(Schedule.user_id == user_id, Schedule.program_id.is_(None)).update({"program_id": rows[0].id}):
+        db.commit()  # solo si cambió algo: así no guarda cambios pendientes de quien llama
     return rows
 
 
@@ -64,10 +64,9 @@ def compute(db: Session, user_id: str, today: date, program_id: Optional[str] = 
 
     graded, pending, in_progress, in_progress_credits = [], [], 0, 0
     finished = set()  # periodos terminados; el que está en curso cuenta entre los que faltan
-    current, period_type = None, None
+    current = None
     periods: Dict[str, Dict] = {}
     for subj, sch in rows:
-        period_type = sch.period_type  # el del periodo más reciente marca la duración de los que vienen
         if sch.end_date < today:
             finished.add(sch.id)
         elif sch.start_date <= today:
@@ -152,7 +151,7 @@ def compute(db: Session, user_id: str, today: date, program_id: Optional[str] = 
     }
     pensum = db.query(CurriculumCourse.credits).filter(CurriculumCourse.program_id == st.id).all()
     timeline = {"today": today, "finished": len(finished), "current": current,
-                "months": PERIOD_MONTHS.get(period_type or "cuatrimestral"),
+                "months": PERIOD_MONTHS.get(st.period_type),  # duración de los periodos que vienen
                 # Sin totales escritos a mano, salen del pénsum
                 "total_credits": st.total_credits or (sum(c or 0 for (c,) in pensum) or None),
                 "total_subjects": st.total_subjects or (len(pensum) or None)}
@@ -283,6 +282,8 @@ def plan(m: Dict, st: Program, pc: float, in_progress_credits: int, timeline: Di
         "time_goal": time_goal(st, remaining, in_progress_credits, rate, avg_cr, timeline, pace["fastest_end"] or pace["projected_end"]),
         "max_periods": st.max_periods,
         "expected_points": round(mu, 2) if mu is not None else None,
+        # Lo más alto que puede quedar tu índice si sacas la nota más alta en todo lo que falta
+        "max_index": (round((pc + top * remaining) / (C + remaining), 2) if remaining else current) if remaining is not None else None,
         "eligible": eligible,
         "requirements": reqs,
         "targets": targets,

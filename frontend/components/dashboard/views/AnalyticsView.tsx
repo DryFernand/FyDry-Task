@@ -670,7 +670,7 @@ function TimeGoal({ p }: { p: GradesPlan }) {
           : g.status === "exigente"
             ? "Es más carga de la que sueles inscribir: ojo con tu índice, cada crédito extra pesa en tus metas."
             : "Cabe a un ritmo que ya has llevado."}
-        {" "}Los periodos se calculan con la duración de tu horario más reciente.
+        {" "}Los periodos se cuentan con el tipo de periodo de la carrera.
       </p>
     </Card>
   );

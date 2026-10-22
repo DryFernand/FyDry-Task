@@ -39,9 +39,12 @@ function ScheduleForm({ target, onClose, onSaved }: { target: ScheduleFormTarget
   const [name, setName] = useState(dup ? "" : src?.name ?? "");
   const { programs } = useDash();
   const [programId, setProgramId] = useState(src?.program_id ?? (target.kind === "new" ? target.programId : undefined) ?? programs[0]?.id ?? "");
-  const [type, setType] = useState<PeriodType>(src?.period_type ?? "cuatrimestral");
+  const programType = (id: string) => programs.find((x) => x.id === id)?.period_type ?? "cuatrimestral";
+  // Horario nuevo o duplicado: el tipo sale de la carrera
+  const [type, setType] = useState<PeriodType>(src && !dup ? src.period_type : programType(programId));
+  const [pickType, setPickType] = useState(false);
   const [start, setStart] = useState(firstStart);
-  const [end, setEnd] = useState(dup ? suggestedEnd(firstStart, src!.period_type) ?? firstStart : src?.end_date ?? suggestedEnd(firstStart, "cuatrimestral")!);
+  const [end, setEnd] = useState(src && !dup ? src.end_date : suggestedEnd(firstStart, type) ?? firstStart);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -82,13 +85,20 @@ function ScheduleForm({ target, onClose, onSaved }: { target: ScheduleFormTarget
           </div>
           <div>
             <label htmlFor="sch-prog" className={fieldLabel}>Carrera</label>
-            <select id="sch-prog" value={programId} onChange={(e) => setProgramId(e.target.value)} className={fieldInput}>
+            <select id="sch-prog" value={programId} onChange={(e) => { setProgramId(e.target.value); if (!pickType) { const t = programType(e.target.value); setType(t); recalc(t, start); } }} className={fieldInput}>
               {programs.map((p) => <option key={p.id} value={p.id}>{p.name}{p.institution ? ` · ${p.institution}` : ""}</option>)}
             </select>
           </div>
         </div>
         <div>
           <span className={fieldLabel}>Tipo de periodo</span>
+          {!pickType && type === programType(programId) ? (
+            <p className="flex flex-wrap items-center gap-2 text-xs text-zinc-700">
+              <span className="px-3 py-1.5 rounded-xl bg-emerald-700 text-white font-semibold">{PERIOD_META[type].label}{PERIOD_META[type].months ? ` · ${PERIOD_META[type].months} m` : ""}</span>
+              <span className="text-zinc-400">el de la carrera</span>
+              <button type="button" onClick={() => setPickType(true)} className="text-[11px] font-semibold text-emerald-700 hover:underline cursor-pointer">Cambiar (verano, personalizado…)</button>
+            </p>
+          ) : (
           <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Tipo de periodo">
             {(Object.keys(PERIOD_META) as PeriodType[]).map((t) => (
               <button key={t} type="button" role="radio" aria-checked={type === t} onClick={() => { setType(t); recalc(t, start); }}
@@ -97,6 +107,7 @@ function ScheduleForm({ target, onClose, onSaved }: { target: ScheduleFormTarget
               </button>
             ))}
           </div>
+          )}
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>

@@ -77,6 +77,7 @@ con = sqlite3.connect(db_path)
 progs = {r[0]: r[1:] for r in con.execute("SELECT user_id, name, institution, pass_min, prior_index, prior_credits, id FROM programs")}
 assert progs["u1"][:5] == ("Mi carrera", "ITLA", 65.0, 3.1, 24), progs
 assert progs["u2"][:5] == ("Mi carrera", None, 70.0, None, None), progs
+assert dict(con.execute("SELECT user_id, period_type FROM programs")) == {"u1": "cuatrimestral", "u2": "trimestral"}, "0008: el tipo del horario más reciente"
 assert dict(con.execute("SELECT id, program_id FROM schedules")) == {"s1": progs["u1"][5], "s2": progs["u1"][5], "s3": progs["u2"][5]}
 con.close()
 

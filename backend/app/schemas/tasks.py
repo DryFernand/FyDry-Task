@@ -267,12 +267,13 @@ class ProfileOut(CoreSchema):
 
 # ---------- Horario de clases ----------
 PeriodType = Literal["bimestral", "trimestral", "cuatrimestral", "semestral", "anual", "verano", "personalizado"]
+ProgramPeriodType = Literal["bimestral", "trimestral", "cuatrimestral", "semestral", "anual"]
 
 
 class ScheduleIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     program_id: Optional[str] = None  # None = la carrera principal
-    period_type: PeriodType = "cuatrimestral"
+    period_type: Optional[PeriodType] = None  # None = el de la carrera
     start_date: dt.date
     end_date: Optional[dt.date] = None  # None = se calcula según el tipo
 
@@ -403,6 +404,7 @@ class ProgramIn(BaseModel):
     total_credits: Optional[int] = Field(default=None, ge=1, le=1000)
     total_subjects: Optional[int] = Field(default=None, ge=1, le=500)
     transfer_credits: Optional[int] = Field(default=None, ge=0, le=1000)
+    period_type: Optional[ProgramPeriodType] = None
     plan_periods: Optional[int] = Field(default=None, ge=1, le=60)
     max_credits_per_period: Optional[int] = Field(default=None, ge=1, le=100)
     goal_end_date: Optional[dt.date] = None
@@ -458,6 +460,7 @@ class ProgramOut(CoreSchema):
     total_credits: Optional[int]
     total_subjects: Optional[int]
     transfer_credits: Optional[int]
+    period_type: str
     plan_periods: Optional[int]
     max_credits_per_period: Optional[int]
     goal_end_date: Optional[dt.date]
