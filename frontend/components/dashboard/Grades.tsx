@@ -12,6 +12,44 @@ export const statusBadge = (passed: boolean | null) =>
     <span className="px-2 py-0.5 rounded-full border text-[10px] font-semibold bg-rose-50 text-rose-700 border-rose-200">✗ Reprobada</span>
   );
 
+/** Carrera por promedio: una sola nota final para todo el periodo. */
+function PeriodGrade({ s, pass }: { s: Schedule; pass: number }) {
+  const { onError, reloadSchedules, programs } = useDash();
+  const scale = programs.find((p) => p.id === s.program_id)?.scale ?? [];
+  const [raw, setRaw] = useState(s.final_grade?.toString() ?? "");
+  const [saving, setSaving] = useState(false);
+  const value = raw.trim() === "" ? null : Number(raw);
+  const valid = value !== null && !Number.isNaN(value) && value >= 0 && value <= 100;
+  const save = async () => {
+    if (value !== null && !valid) return onError("La nota va de 0 a 100.");
+    if (value === s.final_grade) return;
+    setSaving(true);
+    try {
+      await api.setScheduleGrade(s.id, value);
+      reloadSchedules();
+    } catch (e) {
+      onError(e instanceof Error ? e.message : "No se pudo guardar la nota.");
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <section className="p-4 sm:p-5 rounded-3xl bg-white border border-zinc-200/80 flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <h2 className="flex items-center gap-1.5 text-sm font-bold text-zinc-900"><Award className="w-4 h-4 text-amber-600" /> Nota final del periodo</h2>
+        <p className="text-[11px] text-zinc-500">{todayISO() > s.end_date && s.final_grade === null ? "Terminó el periodo: registra su nota para tu promedio." : "Esta carrera se califica por promedio: una nota por periodo."}</p>
+      </div>
+      <div className="flex items-center gap-2">
+        <input type="number" inputMode="decimal" min={0} max={100} step={0.1} value={raw} placeholder="—" aria-label={`Nota final de ${s.name}`}
+          onChange={(e) => setRaw(e.target.value)} onBlur={save} onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+          className="w-24 px-2 py-1.5 rounded-xl border border-zinc-200 text-base text-right tabular-nums" />
+        <span className="w-8 text-center text-sm font-bold text-zinc-900">{valid && scale.length ? letterFor(value!, scale).letter : ""}</span>
+        <span className="w-24">{saving ? <Loader2 className="w-4 h-4 animate-spin text-zinc-400" /> : statusBadge(valid ? value! >= pass : null)}</span>
+      </div>
+    </section>
+  );
+}
+
 /** Notas del periodo: una nota final por materia; letra y estado salen de la escala. */
 export function GradesPanel({ s }: { s: Schedule }) {
   const { onError, reloadSchedules, programs } = useDash();
@@ -36,6 +74,7 @@ export function GradesPanel({ s }: { s: Schedule }) {
     }
   };
 
+  if (settings?.grading === "average") return <PeriodGrade key={`${s.id}-${s.final_grade}`} s={s} pass={settings.pass_min} />;
   if (!s.subjects.length) return null;
   const g = s.grades;
 

@@ -221,6 +221,7 @@ export interface Schedule {
   start_date: string;
   end_date: string;
   is_archived: boolean;
+  final_grade: number | null;
   subjects: Subject[];
   weekly_minutes: number;
   credits: number;
@@ -284,6 +285,9 @@ export interface Curriculum {
   summary: { total: number; aprobada: number; cursando: number; disponible: number; bloqueada: number; credits_total: number; credits_passed: number };
 }
 
+/** credits = índice ponderado por créditos · average = promedio 0-100 de una nota por periodo. */
+export type Grading = "credits" | "average";
+
 export interface HonorLevel {
   name: string;
   min: number;
@@ -306,6 +310,8 @@ export interface Program {
   total_subjects: number | null;
   transfer_credits: number | null;
   period_type: PeriodType;
+  grading: Grading;
+  prior_average: number | null;
   plan_periods: number | null;
   max_credits_per_period: number | null;
   goal_end_date: string | null;
@@ -389,6 +395,7 @@ export interface GradedSubject {
 }
 
 export interface GradesAnalytics {
+  mode: "credits";
   program: { id: string; name: string; institution: string | null };
   scale: GradeBand[];
   pass_min: number;
@@ -409,6 +416,46 @@ export interface GradesAnalytics {
   subjects: GradedSubject[];
   evolution: { schedule_id: string; name: string; start_date: string; end_date: string; subjects: number; credits: number; period_index: number | null; average: number; cumulative_index: number | null }[];
   plan: GradesPlan;
+  insights: string[];
+}
+
+/** Carrera por promedio: una nota final (0-100) por periodo. */
+export interface AverageAnalytics {
+  mode: "average";
+  program: { id: string; name: string; institution: string | null };
+  scale: GradeBand[];
+  pass_min: number;
+  has_prior: boolean;
+  prior: { average: number | null; periods: number | null; failed: number | null };
+  average: number | null;
+  app_average: number | null;
+  periods_graded: number;
+  passed: number;
+  failed: number;
+  in_progress: number;
+  pending_grades: { schedule_id: string; name: string }[];
+  evolution: { schedule_id: string; name: string; start_date: string; end_date: string; grade: number; letter: string; passed: boolean; cumulative_average: number }[];
+  best: AverageAnalytics["evolution"][number] | null;
+  plan: {
+    total_periods: number | null;
+    periods_done: number;
+    periods_remaining: number | null;
+    progress: number | null;
+    periods_used: number;
+    periods_in_app: number;
+    prior_periods: number;
+    pace: { plan_periods: number | null; projected_total: number | null; delta: number | null; projected_end: string | null };
+    time_goal: {
+      end_date: string; months: number; periods_available: number; periods_needed: number; next_end: string; earliest_end: string | null;
+      status: "posible" | "imposible"; periods: { start: string; end: string; in_progress: boolean }[]; leftover: number;
+    } | null;
+    max_periods: number | null;
+    expected_grade: number | null;
+    max_average: number | null;
+    eligible: boolean;
+    requirements: GradesPlan["requirements"];
+    targets: PlanTarget[];
+  };
   insights: string[];
 }
 
@@ -669,7 +716,8 @@ export const api = {
   courses: (programId: string) => send<Curriculum>(`/programs/${programId}/courses${qs({ today: todayISO() })}`),
   saveCourses: (programId: string, courses: Pick<Course, "code" | "name" | "credits" | "term" | "prereqs" | "coreqs" | "done">[]) =>
     send<Curriculum>(`/programs/${programId}/courses${qs({ today: todayISO() })}`, "PUT", { courses }),
-  gradesAnalytics: (programId?: string | null) => send<GradesAnalytics>(`/grades/analytics${qs({ today: todayISO(), ...(programId ? { program_id: programId } : {}) })}`),
+  setScheduleGrade: (id: string, grade: number | null) => send<{ grade: number | null; letter: string | null; passed: boolean | null }>(`/schedules/${id}/grade`, "PUT", { grade }),
+  gradesAnalytics: (programId?: string | null) => send<GradesAnalytics | AverageAnalytics>(`/grades/analytics${qs({ today: todayISO(), ...(programId ? { program_id: programId } : {}) })}`),
   markAttendance: (sessionId: string, date: string, status: AttendanceStatus | null) => send<unknown>(`/sessions/${sessionId}/attendance`, "PUT", { date, status }),
 
   challenges: (start: string, end: string) => send<Challenge[]>(`/challenges${qs({ start, end })}`),

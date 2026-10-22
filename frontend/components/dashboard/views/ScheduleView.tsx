@@ -278,7 +278,7 @@ export default function ScheduleView() {
                   </p>
                 </div>
                 <div className="flex items-center gap-4">
-                  {[["Materias", String(current.subjects.length)], ["Clase/semana", hoursLabel(current.weekly_minutes)], ["Créditos", String(current.credits)]].map(([l, v]) => (
+                  {[["Materias", String(current.subjects.length)], ["Clase/semana", hoursLabel(current.weekly_minutes)], program?.grading === "average" ? ["Nota", current.final_grade?.toString() ?? "—"] : ["Créditos", String(current.credits)]].map(([l, v]) => (
                     <div key={l} className="text-center">
                       <div className="text-lg font-bold text-zinc-950 tabular-nums">{v}</div>
                       <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">{l}</div>

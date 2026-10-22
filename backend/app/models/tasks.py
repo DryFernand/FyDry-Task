@@ -206,6 +206,7 @@ class Schedule(Base, TimestampMixin):
     start_date = Column(Date, nullable=False)
     end_date = Column(Date, nullable=False)
     is_archived = Column(Boolean, nullable=False, default=False)
+    final_grade = Column(Float, nullable=True)  # nota del periodo (0-100) en carreras por promedio
 
 
 class Subject(Base, TimestampMixin):
@@ -291,6 +292,8 @@ class Program(Base, TimestampMixin):
     total_subjects = Column(Integer, nullable=True)
     transfer_credits = Column(Integer, nullable=True)  # convalidados: avanzan el pénsum, no cuentan en el índice
     period_type = Column(String(16), nullable=False, default="cuatrimestral")  # los horarios nuevos lo toman de aquí
+    grading = Column(String(12), nullable=False, default="credits")  # credits = índice por créditos | average = promedio por periodo
+    prior_average = Column(Float, nullable=True)  # promedio (0-100) de los periodos sin registrar, en carreras por promedio
     plan_periods = Column(Integer, nullable=True)  # duración del pénsum en periodos
     max_credits_per_period = Column(Integer, nullable=True)  # límite de inscripción de la institución
     goal_end_date = Column(Date, nullable=True)  # meta: terminar la carrera para esta fecha

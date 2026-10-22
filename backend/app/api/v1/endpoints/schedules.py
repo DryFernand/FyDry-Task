@@ -332,16 +332,27 @@ def update_program(pid: str, payload: ProgramIn, today: Optional[date] = Query(d
     if st.total_credits and st.transfer_credits and st.transfer_credits > st.total_credits:
         db.rollback()
         raise HTTPException(status_code=422, detail="Los créditos convalidados no pueden superar los del pénsum.")
+    avg = st.grading == "average"
+    top = 100 if avg else max(b["points"] for b in st.scale)
+    if any(v is not None and v > top for v in [st.target_index, st.probation_min, *[h["min"] for h in st.honors or []]]):
+        db.rollback()
+        raise HTTPException(status_code=422, detail=f"Las metas y el mínimo de prueba van de 0 a {top:g}"
+                                                    + (" (promedio)." if avg else " (índice). Si tu carrera no usa créditos, cámbiala a promedio."))
+    if avg and st.prior_average is not None and not st.prior_periods:
+        db.rollback()
+        raise HTTPException(status_code=422, detail="Para usar tu promedio anterior indica también cuántos periodos son.")
     if st.target_index is not None:
-        # Mismo cálculo que los honores: el índice deseado tiene que ser alcanzable con lo que falta
+        # Mismo cálculo que los honores: la meta tiene que ser alcanzable con lo que falta
         db.flush()
         pl = gr.compute(db, user.id, today or date.today(), st.id)["plan"]
         t = next(x for x in pl["targets"] if x["kind"] == "target")
         if t["status"] in ("imposible", "no_alcanzado"):
-            target, best = st.target_index, pl["max_index"]
+            target, best = st.target_index, pl["max_average" if avg else "max_index"]
             db.rollback()
-            raise HTTPException(status_code=422, detail=f"El índice deseado {target:.2f} está fuera de tu alcance: "
-                                                        f"aun con todo A llegarías a {best:.2f}. Pon una meta de {best:.2f} o menos.")
+            what, best_txt = ("promedio", f"{best:g}") if avg else ("índice", f"{best:.2f}")
+            raise HTTPException(status_code=422, detail=f"El {what} deseado {target:g} está fuera de tu alcance: aun con "
+                                                        f"{'100' if avg else 'todo A'} en lo que falta llegarías a {best_txt}. "
+                                                        f"Pon una meta de {best_txt} o menos.")
     db.commit()
     db.refresh(st)
     return st
@@ -359,6 +370,19 @@ def delete_program(pid: str, user: CurrentUser = Depends(get_current_user), db: 
     db.delete(st)
     db.commit()
     return Response(status_code=204)
+
+
+@router.put("/schedules/{sid}/grade", summary="Nota final del periodo (0-100) en carreras por promedio; null la quita")
+def set_schedule_grade(sid: str, payload: GradeIn, user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    sch = _owned(db, Schedule, sid, user.id)
+    st = gr.get_program(db, user.id, sch.program_id)
+    if st.grading != "average":
+        raise HTTPException(status_code=422, detail="Esta carrera califica por materias: pon la nota de cada materia.")
+    sch.final_grade = payload.grade
+    db.commit()
+    band = gr.letter_for(payload.grade, st.scale) if payload.grade is not None else None
+    return {"schedule_id": sch.id, "grade": payload.grade, "letter": band["letter"] if band else None,
+            "passed": payload.grade >= st.pass_min if payload.grade is not None else None}
 
 
 @router.get("/programs/{pid}/courses", summary="Pénsum con el estado de cada materia: aprobada, cursando, disponible o bloqueada")

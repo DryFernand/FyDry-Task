@@ -96,7 +96,8 @@ def _compact(all_m: Dict) -> Dict:
             "letras": g.get("letters"),
             "aprobadas": g.get("passed"),
             "reprobadas": g.get("failed"),
-            "evolucion_indice": [{"periodo": e["name"], "indice": e["period_index"]} for e in g.get("evolution", [])],
+            # Carreras por promedio: la nota de cada periodo en vez del índice
+            "evolucion_indice": [{"periodo": e["name"], "indice": e.get("period_index", e.get("grade"))} for e in g.get("evolution", [])],
         } if g else None,
     }
 

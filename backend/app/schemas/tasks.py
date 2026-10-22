@@ -363,6 +363,7 @@ class ScheduleOut(CoreSchema):
     start_date: dt.date
     end_date: dt.date
     is_archived: bool
+    final_grade: Optional[float] = None
     subjects: List[SubjectOut] = []
     weekly_minutes: int = 0
     credits: int = 0
@@ -387,7 +388,7 @@ class GradeBand(BaseModel):
 
 class HonorLevel(BaseModel):
     name: str = Field(min_length=1, max_length=40)
-    min: float = Field(ge=0, le=5)
+    min: float = Field(ge=0, le=100)  # índice (0-4) o promedio (0-100) según cómo califica la carrera
 
 
 class ProgramIn(BaseModel):
@@ -405,12 +406,14 @@ class ProgramIn(BaseModel):
     total_subjects: Optional[int] = Field(default=None, ge=1, le=500)
     transfer_credits: Optional[int] = Field(default=None, ge=0, le=1000)
     period_type: Optional[ProgramPeriodType] = None
+    grading: Optional[Literal["credits", "average"]] = None
+    prior_average: Optional[float] = Field(default=None, ge=0, le=100)
     plan_periods: Optional[int] = Field(default=None, ge=1, le=60)
     max_credits_per_period: Optional[int] = Field(default=None, ge=1, le=100)
     goal_end_date: Optional[dt.date] = None
     honors: Optional[List[HonorLevel]] = Field(default=None, max_length=8)
-    target_index: Optional[float] = Field(default=None, ge=0, le=5)
-    probation_min: Optional[float] = Field(default=None, ge=0, le=5)
+    target_index: Optional[float] = Field(default=None, ge=0, le=100)
+    probation_min: Optional[float] = Field(default=None, ge=0, le=100)
     max_periods: Optional[int] = Field(default=None, ge=1, le=60)
     min_institution_pct: Optional[int] = Field(default=None, ge=0, le=100)
 
@@ -461,6 +464,8 @@ class ProgramOut(CoreSchema):
     total_subjects: Optional[int]
     transfer_credits: Optional[int]
     period_type: str
+    grading: str
+    prior_average: Optional[float]
     plan_periods: Optional[int]
     max_credits_per_period: Optional[int]
     goal_end_date: Optional[dt.date]

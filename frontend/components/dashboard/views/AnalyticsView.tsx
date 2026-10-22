@@ -5,7 +5,7 @@ import { ArrowLeft, Award, BarChart3, ChevronRight, Flag, Flame, GraduationCap, 
 import { useDash } from "../DashContext";
 import { statusBadge } from "../Grades";
 import { useLoad } from "../useLoad";
-import { addDays, Analytics, api, CHALLENGE_META, ChallengeAnalytics, ClassAnalytics, formatDay, GradesAnalytics, GradesPlan, HabitAnalytics, PlanTarget, STATUS_META, TargetStatus, todayISO, weekStart } from "@/lib/tasks";
+import { addDays, Analytics, api, AverageAnalytics, CHALLENGE_META, ChallengeAnalytics, ClassAnalytics, formatDay, GradesAnalytics, GradesPlan, HabitAnalytics, PlanTarget, STATUS_META, TargetStatus, todayISO, weekStart } from "@/lib/tasks";
 
 const BRAND = "#6e2234";
 const SLOT_LABEL = { manana: "Mañana (antes de 12)", tarde: "Tarde (12–18)", noche: "Noche (desde 18)", sin_hora: "Sin hora" } as const;
@@ -75,14 +75,16 @@ const SECTIONS: { key: Section; title: string; desc: string; icon: typeof BarCha
 ];
 
 /** Pantalla previa: eliges qué análisis ver. */
-function Picker({ all, grades, hasClasses, onPick }: { all: Analytics; grades: GradesAnalytics | null; hasClasses: boolean; onPick: (s: Section) => void }) {
+function Picker({ all, grades, hasClasses, onPick }: { all: Analytics; grades: GradesAnalytics | AverageAnalytics | null; hasClasses: boolean; onPick: (s: Section) => void }) {
   const headline: Record<Section, [string, string]> = {
     general: [String(all.overview.active_days), "días activos"],
     tasks: [pct(all.overview.tasks_rate), `${all.tasks.evaluated} tareas marcadas`],
     habits: [pct(all.overview.habits_rate), `${all.habits.done} de ${all.habits.expected} veces`],
     challenges: [pct(all.overview.challenges_rate), `${all.challenges.decided} retos con resultado`],
     classes: hasClasses ? [pct(all.overview.attendance_rate), "de asistencia"] : ["—", "sin clases en el periodo"],
-    grades: grades?.cumulative_index != null ? [grades.cumulative_index.toFixed(2), `índice · ${grades.courses} materias`] : ["—", "sin notas aún"],
+    grades: grades?.mode === "average"
+      ? grades.average != null ? [String(grades.average), `promedio · ${grades.periods_graded} periodos`] : ["—", "sin notas aún"]
+      : grades?.cumulative_index != null ? [grades.cumulative_index.toFixed(2), `índice · ${grades.courses} materias`] : ["—", "sin notas aún"],
   };
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
@@ -111,7 +113,7 @@ export default function AnalyticsView({ refreshKey, onError }: { refreshKey: num
   const [section, setSection] = useState<Section | null>(null);
   const { programs } = useDash();
   const [programId, setProgramId] = useState<string | null>(null);
-  const grades = useLoad<GradesAnalytics>(() => api.gradesAnalytics(programId), [programId], refreshKey, onError);
+  const grades = useLoad<GradesAnalytics | AverageAnalytics>(() => api.gradesAnalytics(programId), [programId], refreshKey, onError);
   const meta = section ? SECTIONS.find((x) => x.key === section)! : null;
   const hasClasses = !!all && (all.classes.classes > 0 || all.classes.by_subject.length > 0);
   const m = all?.tasks;
@@ -187,7 +189,7 @@ export default function AnalyticsView({ refreshKey, onError }: { refreshKey: num
           {section === "habits" && <HabitsSection h={all.habits} />}
           {section === "challenges" && <ChallengesSection c={all.challenges} />}
           {section === "classes" && <ClassesSection k={all.classes} />}
-          {section === "grades" && (grades.data ? <GradesSection g={grades.data} /> : <div className="py-16 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-zinc-400" /></div>)}
+          {section === "grades" && (grades.data ? (grades.data.mode === "average" ? <AverageSection g={grades.data} /> : <GradesSection g={grades.data} />) : <div className="py-16 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-zinc-400" /></div>)}
           {section === "tasks" && (
           <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -473,23 +475,24 @@ const TARGET_META: Record<TargetStatus, { label: string; className: string }> = 
 };
 const REQ_ICON = { ok: ["✓", "text-green-700"], fail: ["✗", "text-rose-600"], warn: ["!", "text-amber-700"], unknown: ["?", "text-zinc-400"] } as const;
 
-function TargetCard({ t, max }: { t: PlanTarget; max: number }) {
+function TargetCard({ t, max, avg = false }: { t: PlanTarget; max: number; avg?: boolean }) {
   const meta = TARGET_META[t.status];
+  const fmt = (v: number) => (avg ? String(v) : v.toFixed(2));
   const margin = t.margins.filter((x) => x.credits > 0);
   return (
     <div className="p-4 rounded-2xl border border-zinc-200/80 space-y-2">
       <div className="flex items-start justify-between gap-2">
         <div>
           <div className="text-sm font-bold text-zinc-900">{t.name}</div>
-          <div className="text-[11px] text-zinc-500">índice ≥ {t.min.toFixed(2)}</div>
+          <div className="text-[11px] text-zinc-500">{avg ? "promedio" : "índice"} ≥ {fmt(t.min)}</div>
         </div>
         <span className={`px-2 py-0.5 rounded-full border text-[10px] font-semibold whitespace-nowrap ${meta.className}`}>{meta.label}</span>
       </div>
       {t.needed !== null && t.status !== "imposible" && (
         <div className="flex items-baseline gap-3">
           <div>
-            <div className="text-xl font-bold tabular-nums text-zinc-950">{t.needed.toFixed(2)}</div>
-            <div className="text-[10px] text-zinc-500">índice necesario en lo que falta</div>
+            <div className="text-xl font-bold tabular-nums text-zinc-950">{fmt(t.needed)}</div>
+            <div className="text-[10px] text-zinc-500">{avg ? "promedio" : "índice"} necesario en lo que falta</div>
           </div>
           {t.probability !== null && (
             <div>
@@ -500,11 +503,11 @@ function TargetCard({ t, max }: { t: PlanTarget; max: number }) {
         </div>
       )}
       {t.needed !== null && t.status !== "imposible" && (
-        <div className="h-2 rounded-full bg-zinc-100 overflow-hidden" title={`Necesitas ${t.needed.toFixed(2)} de ${max.toFixed(2)}`}>
+        <div className="h-2 rounded-full bg-zinc-100 overflow-hidden" title={`Necesitas ${fmt(t.needed)} de ${fmt(max)}`}>
           <div className="h-full rounded-r-[4px]" style={{ width: `${Math.max(Math.min(t.needed / max, 1) * 100, 2)}%`, background: BRAND }} />
         </div>
       )}
-      {t.status === "imposible" && t.final_if_all !== null && <p className="text-xs text-zinc-600">Aun sacando todo {"A"} llegarías a {t.final_if_all.toFixed(2)}.</p>}
+      {t.status === "imposible" && t.final_if_all !== null && <p className="text-xs text-zinc-600">Aun sacando {avg ? "100" : "todo A"} en lo que falta llegarías a {fmt(t.final_if_all)}.</p>}
       {t.status === "descalificado" && <p className="text-xs text-rose-700">No cumples un requisito de honores (abajo).</p>}
       {t.status !== "descalificado" && t.status !== "imposible" && t.margins.length > 0 && (
         <p className="text-xs text-zinc-600 leading-relaxed">
@@ -673,5 +676,120 @@ function TimeGoal({ p }: { p: GradesPlan }) {
         {" "}Los periodos se cuentan con el tipo de periodo de la carrera.
       </p>
     </Card>
+  );
+}
+
+/** Carrera por promedio: una nota final por periodo, avance y metas en periodos. */
+function AverageSection({ g }: { g: AverageAnalytics }) {
+  const p = g.plan;
+  const pct = Math.round((p.progress ?? 0) * 100);
+  return (
+    <>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Stat label="Promedio" value={g.average?.toString() ?? "—"} sub={`de 100${g.has_prior && g.app_average !== null ? ` · en la app ${g.app_average}` : ""}`} />
+        <Stat label="Periodos calificados" value={String(g.periods_graded)} sub={`${g.passed} aprobados · ${g.failed} reprobados`} />
+        <Stat label="Mejor periodo" value={g.best ? String(g.best.grade) : "—"} sub={g.best?.name ?? "sin notas aún"} />
+        <Stat label="Avance" value={p.total_periods ? `${pct}%` : "—"} sub={p.total_periods ? `${p.periods_done} de ${p.total_periods} periodos` : "indica el total de periodos"} />
+      </div>
+      <Insights items={g.insights} />
+      {p.total_periods === null ? (
+        <Card title="Tu carrera" icon={Flag}>
+          <p className="text-xs text-zinc-600">Indica el <b>total de periodos</b> de la carrera en <b>Horario → Carrera e historial → General</b> para ver cuánto te falta, qué promedio necesitas para tus metas y si llegas a tiempo.</p>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <Card title="Tu carrera" icon={Flag}>
+            <div className="flex items-baseline justify-between">
+              <span className="text-2xl font-bold tabular-nums text-zinc-950">{pct}%</span>
+              <span className="text-[11px] text-zinc-500">{p.periods_done} de {p.total_periods} periodos aprobados</span>
+            </div>
+            <div className="mt-2 h-2.5 rounded-full bg-zinc-100 overflow-hidden" title={`${pct}% de la carrera`}>
+              <div className="h-full rounded-r-[4px]" style={{ width: `${Math.max(pct, 2)}%`, background: BRAND }} />
+            </div>
+            <dl className="mt-3 grid grid-cols-2 gap-y-2 text-xs">
+              <dt className="text-zinc-500">Periodos por aprobar</dt><dd className="text-right font-semibold tabular-nums">{p.periods_remaining}</dd>
+              {g.in_progress > 0 && <><dt className="text-zinc-500">En curso ahora</dt><dd className="text-right font-semibold tabular-nums">1</dd></>}
+              <dt className="text-zinc-500">Periodos terminados</dt>
+              <dd className="text-right font-semibold tabular-nums">
+                {p.periods_used}{p.max_periods ? ` de ${p.max_periods} máx.` : ""}
+                {p.prior_periods > 0 && <span className="block text-[10px] font-normal text-zinc-400">{p.periods_in_app} en la app + {p.prior_periods} sin registrar</span>}
+              </dd>
+              {p.pace.projected_total !== null && (
+                <><dt className="text-zinc-500">Terminarías en</dt><dd className="text-right font-semibold tabular-nums">{p.pace.projected_total} periodos{p.pace.projected_end && <span className="block text-[10px] font-normal text-zinc-400">≈ {shortDate(p.pace.projected_end)}</span>}</dd></>
+              )}
+            </dl>
+            {p.pace.delta !== null && p.pace.delta > 0 && <p className="mt-3 text-xs font-semibold text-amber-700">Vas {p.pace.delta} periodo(s) atrasado por periodos repetidos.</p>}
+          </Card>
+          <Card title="Metas de promedio" icon={Target} className="lg:col-span-2">
+            {p.targets.length === 0 ? (
+              <p className="text-xs text-zinc-500">Agrega niveles de honor o un promedio deseado en la carrera.</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{p.targets.map((t) => <TargetCard key={`${t.kind}-${t.name}`} t={t} max={100} avg />)}</div>
+            )}
+            {p.expected_grade !== null && (p.periods_remaining ?? 0) > 0 && (
+              <p className="mt-3 text-[11px] text-zinc-400">La probabilidad es una estimación con tus notas por periodo (promedio {p.expected_grade}) y su variación; no es una garantía.</p>
+            )}
+          </Card>
+          {p.time_goal ? (
+            <Card title={`Meta: terminar para el ${shortDate(p.time_goal.end_date)}`} icon={Flag} className="lg:col-span-3">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="flex flex-wrap gap-6">
+                  <div><div className="text-xl font-bold tabular-nums text-zinc-950">{p.time_goal.periods_needed}</div><div className="text-[10px] text-zinc-500">periodos que faltan</div></div>
+                  <div><div className="text-xl font-bold tabular-nums text-zinc-950">{p.time_goal.periods_available}</div><div className="text-[10px] text-zinc-500">caben en {p.time_goal.months} meses</div></div>
+                </div>
+                <span className={`px-2 py-0.5 rounded-full border text-[10px] font-semibold ${p.time_goal.status === "posible" ? "bg-green-50 text-green-700 border-green-200" : "bg-rose-50 text-rose-700 border-rose-200"}`}>{p.time_goal.status === "posible" ? "Posible" : "No cabe"}</span>
+              </div>
+              {p.time_goal.periods.length > 0 && (
+                <ol className="mt-4 divide-y divide-zinc-100">
+                  {p.time_goal.periods.map((x, i) => (
+                    <li key={x.start} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-xs">
+                      <span className="w-20 font-semibold text-zinc-900">Periodo {i + 1}</span>
+                      <span className="flex-1 min-w-0 text-zinc-500">{shortDate(x.start)} – {shortDate(x.end)}{x.in_progress && " · en curso"}</span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+              <p className="mt-3 text-[11px] text-zinc-500">
+                {p.time_goal.status === "posible" ? "Cabe si apruebas cada periodo a la primera." : `Quedarían ${p.time_goal.leftover} periodo(s) fuera.${p.time_goal.earliest_end ? ` Lo más pronto que terminarías: ≈ ${shortDate(p.time_goal.earliest_end)}.` : ""}`}
+              </p>
+            </Card>
+          ) : (
+            <Card title="Meta de tiempo" icon={Flag} className="lg:col-span-3">
+              <p className="text-xs text-zinc-500">Pon una fecha en <b>Carrera e historial → Metas → Terminar la carrera para</b> y verás si caben los periodos que te faltan.</p>
+            </Card>
+          )}
+          <Card title="Requisitos de honores" icon={ShieldCheck} className="lg:col-span-3">
+            <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+              {p.requirements.map((r) => (
+                <li key={r.key} className="flex gap-2 text-xs">
+                  <span className={`w-4 text-center font-bold ${REQ_ICON[r.status][1]}`} aria-label={r.status}>{REQ_ICON[r.status][0]}</span>
+                  <span><b className="text-zinc-800">{r.label}.</b> <span className="text-zinc-500">{r.detail}</span></span>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        </div>
+      )}
+      {g.evolution.length > 0 && (
+        <Card title="Nota por periodo" icon={BarChart3}>
+          {g.evolution.map((e) => (
+            <div key={e.schedule_id} className="grid grid-cols-[minmax(0,8rem)_1fr_5rem] sm:grid-cols-[minmax(0,11rem)_1fr_6rem] items-center gap-3 py-1" title={`${e.name}: ${e.grade}`}>
+              <span className="text-xs text-zinc-700 truncate">{e.name}</span>
+              <div className="h-2.5 rounded-full bg-zinc-100 overflow-hidden">
+                <div className="h-full rounded-r-[4px]" style={{ width: `${Math.max(e.grade, 2)}%`, background: e.passed ? BRAND : "#e11d48" }} />
+              </div>
+              <span className="text-xs font-semibold text-zinc-900 tabular-nums text-right">{e.grade} · {e.letter}<span className="block text-[10px] font-normal text-zinc-400">prom. {e.cumulative_average}</span></span>
+            </div>
+          ))}
+          <p className="mt-2 text-[11px] text-zinc-400">Rojo = reprobado (menos de {g.pass_min}).{g.has_prior ? ` El promedio parte de tu historial (${g.prior.periods} periodos con ${g.prior.average}).` : ""}</p>
+        </Card>
+      )}
+      {g.pending_grades.length > 0 && (
+        <Card title="Notas por registrar" icon={Award}>
+          <ul className="space-y-1 text-xs text-zinc-600">{g.pending_grades.map((x) => <li key={x.schedule_id}>{x.name}</li>)}</ul>
+          <p className="mt-2 text-[11px] text-zinc-400">Regístralas en Horario → Nota final del periodo.</p>
+        </Card>
+      )}
+    </>
   );
 }

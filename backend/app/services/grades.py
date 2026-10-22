@@ -53,6 +53,9 @@ def _index(points_credits: float, credits: float) -> Optional[float]:
 
 def compute(db: Session, user_id: str, today: date, program_id: Optional[str] = None) -> Dict:
     st = get_program(db, user_id, program_id)
+    if st.grading == "average":
+        from app.services import average  # evita el import circular: average usa helpers de aquí
+        return average.compute(db, st, today)
     scale = st.scale
     rows = (
         db.query(Subject, Schedule)
@@ -125,6 +128,7 @@ def compute(db: Session, user_id: str, today: date, program_id: Optional[str] = 
     failed = [g for g in graded if not g["passed"]]
 
     m = {
+        "mode": "credits",
         "program": {"id": st.id, "name": st.name, "institution": st.institution},
         "scale": scale,
         "pass_min": st.pass_min,
@@ -170,6 +174,31 @@ def _add_months(d: date, n: int) -> date:
     return date(y, mo, min(d.day, calendar.monthrange(y, mo)[1]))
 
 
+def _end_after(timeline: Dict, k: int) -> Optional[str]:
+    """Fin del k-ésimo periodo que falta, contando el que está en curso como el primero."""
+    pm, today, cur = timeline["months"], timeline["today"], timeline["current"]
+    if not pm or k <= 0:
+        return None
+    if cur:
+        return (_add_months(cur.end_date + timedelta(days=1), (k - 1) * pm) - timedelta(days=1)).isoformat()
+    return (_add_months(today, k * pm) - timedelta(days=1)).isoformat()
+
+
+def _slots(timeline: Dict, goal: date):
+    """Periodos completos que terminan antes de la fecha meta (después del que está en curso) y el fin del próximo."""
+    pm, cur = timeline["months"], timeline["current"]
+    slots = []
+    start = cur.end_date + timedelta(days=1) if cur else timeline["today"]
+    next_end = _add_months(start, pm) - timedelta(days=1)
+    while len(slots) < 60:
+        end = _add_months(start, pm) - timedelta(days=1)
+        if end > goal:
+            break
+        slots.append((start, end))
+        start = end + timedelta(days=1)
+    return slots, next_end
+
+
 def plan(m: Dict, st: Program, pc: float, in_progress_credits: int, timeline: Dict) -> Dict:
     """Lo que falta de la carrera y, por cada meta (honores o índice deseado), qué índice necesitas
     en los créditos restantes, cuánto margen tienes y una probabilidad estimada.
@@ -195,15 +224,9 @@ def plan(m: Dict, st: Program, pc: float, in_progress_credits: int, timeline: Di
     # Incluye el periodo en curso: sus créditos todavía están entre los que faltan
     periods_left = 0 if remaining == 0 else math.ceil(remaining / pace_rate) if remaining and pace_rate else None
     periods_used = (st.prior_periods or 0) + timeline["finished"]
-    pm, today, cur = timeline["months"], timeline["today"], timeline["current"]
 
     def end_after(k: int) -> Optional[str]:
-        """Fin del k-ésimo periodo contando el que está en curso como el primero."""
-        if not pm or k <= 0:
-            return None
-        if cur:
-            return (_add_months(cur.end_date + timedelta(days=1), (k - 1) * pm) - timedelta(days=1)).isoformat()
-        return (_add_months(today, k * pm) - timedelta(days=1)).isoformat()
+        return _end_after(timeline, k)
 
     projected = periods_used + periods_left if periods_left is not None else None
     pace = {
@@ -298,15 +321,7 @@ def time_goal(st: Program, remaining: Optional[int], in_progress_credits: int, r
     if not goal or not remaining or not pm:
         return None
     limit = st.max_credits_per_period
-    slots = []  # periodos completos que terminan antes de la fecha meta (después del que está en curso)
-    start = cur.end_date + timedelta(days=1) if cur else today
-    next_end = _add_months(start, pm) - timedelta(days=1)
-    while len(slots) < 60:
-        end = _add_months(start, pm) - timedelta(days=1)
-        if end > goal:
-            break
-        slots.append((start, end))
-        start = end + timedelta(days=1)
+    slots, next_end = _slots(timeline, goal)
     rest = remaining - (in_progress_credits if cur else 0)
     n = len(slots)
     per = (math.ceil(rest / n) if n else None) if rest > 0 else 0  # None = no cabe ningún periodo

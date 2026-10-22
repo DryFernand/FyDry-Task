@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { Award, BookOpen, ClipboardPaste, GraduationCap, History, Landmark, Loader2, Plus, Target, Trash2, X } from "lucide-react";
 import { fieldInput, fieldLabel } from "./TaskFormModal";
 import { useDash } from "./DashContext";
-import { api, Course, CourseStatus, GradeBand, HonorLevel, PERIOD_META, Program, PROGRAM_PERIODS, todayISO } from "@/lib/tasks";
+import { api, Course, CourseStatus, GradeBand, Grading, HonorLevel, PERIOD_META, Program, PROGRAM_PERIODS, todayISO } from "@/lib/tasks";
 
 const num = (v: string) => (v.trim() === "" ? null : Number(v));
 const str = (x: number | null | undefined) => (x == null ? "" : String(x));
@@ -20,6 +20,8 @@ const DEFAULT_SCALE: GradeBand[] = [
   { letter: "A", min: 90, points: 4 }, { letter: "B", min: 80, points: 3 }, { letter: "C", min: 70, points: 2 }, { letter: "D", min: 60, points: 1 }, { letter: "F", min: 0, points: 0 },
 ];
 const DEFAULT_HONORS: HonorLevel[] = [{ name: "Summa Cum Laude", min: 3.8 }, { name: "Magna Cum Laude", min: 3.5 }, { name: "Cum Laude", min: 3.2 }];
+// En carreras por promedio las metas van en la escala de 0 a 100
+const AVERAGE_HONORS: HonorLevel[] = [{ name: "Summa Cum Laude", min: 95 }, { name: "Magna Cum Laude", min: 90 }, { name: "Cum Laude", min: 85 }];
 
 type Tab = "general" | "pensum" | "goals" | "rules" | "history" | "scale";
 const TABS: { id: Tab; label: string; icon: typeof Award }[] = [
@@ -82,11 +84,22 @@ function ProgramForm({ program, onClose }: { program: Program | null; onClose: (
     plan_periods: str(p?.plan_periods), max_credits_per_period: str(p?.max_credits_per_period),
     target_index: str(p?.target_index), probation_min: str(p ? p.probation_min : 2), max_periods: str(p?.max_periods),
     min_institution_pct: str(p ? p.min_institution_pct : 50), prior_periods: str(p?.prior_periods),
+    prior_average: str(p?.prior_average),
     prior_index: str(p?.prior_index), prior_credits: str(p?.prior_credits), prior_courses: str(p?.prior_courses), prior_passed: str(p?.prior_passed), prior_failed: str(p?.prior_failed),
   });
   const [goalDate, setGoalDate] = useState(p?.goal_end_date ?? "");
   const [periodType, setPeriodType] = useState<keyof typeof PROGRAM_PERIODS>((p?.period_type as keyof typeof PROGRAM_PERIODS) ?? "cuatrimestral");
   const [maxIndex, setMaxIndex] = useState<number | null>(null);
+  const [grading, setGrading] = useState<Grading>(p?.grading ?? "credits");
+  const avg = grading === "average";
+  // Cambiar cómo califica cambia la escala de las metas: se reinician a los valores de ese modo
+  const changeGrading = (g: Grading) => {
+    if (g === grading) return;
+    setGrading(g);
+    setHonors(g === "average" ? AVERAGE_HONORS : DEFAULT_HONORS);
+    setF((x) => ({ ...x, target_index: "", probation_min: g === "average" ? "" : "2" }));
+    setMaxIndex(null);
+  };
   const [rows, setRows] = useState<Row[] | null>(p ? null : []);
   const [status, setStatus] = useState<Record<string, Course>>({});
   const [pensumDirty, setPensumDirty] = useState(false);
@@ -103,7 +116,7 @@ function ProgramForm({ program, onClose }: { program: Program | null; onClose: (
 
   useEffect(() => {
     if (!p) return;
-    api.gradesAnalytics(p.id).then((g) => setMaxIndex(g.plan.max_index)).catch(() => setMaxIndex(null));
+    api.gradesAnalytics(p.id).then((g) => setMaxIndex(g.mode === "average" ? g.plan.max_average : g.plan.max_index)).catch(() => setMaxIndex(null));
     api.courses(p.id).then((r) => {
       setRows(r.courses.map(toRow));
       setStatus(Object.fromEntries(r.courses.map((c) => [c.code, c])));
@@ -125,7 +138,7 @@ function ProgramForm({ program, onClose }: { program: Program | null; onClose: (
       onClose();
     } catch (e) {
       const msg = e instanceof Error ? e.message : "No se pudo guardar.";
-      if (msg.includes("índice deseado")) setTab("goals");
+      if (msg.includes("deseado") || msg.includes("metas")) setTab("goals");
       setError(msg);
     } finally {
       setSaving(false);
@@ -140,7 +153,8 @@ function ProgramForm({ program, onClose }: { program: Program | null; onClose: (
     const target = num(f.target_index);
     if (target !== null && maxIndex !== null && target > maxIndex + 1e-9) {
       setTab("goals");
-      return setError(`Ese índice deseado está fuera de tu alcance: aun con todo A llegarías a ${maxIndex.toFixed(2)}.`);
+      return setError(avg ? `Ese promedio deseado está fuera de tu alcance: aun con 100 en lo que falta llegarías a ${maxIndex}.`
+        : `Ese índice deseado está fuera de tu alcance: aun con todo A llegarías a ${maxIndex.toFixed(2)}.`);
     }
     const filled = (rows ?? []).filter((r) => r.code.trim() || r.name.trim());
     const bad = filled.find((r) => !r.code.trim() || !r.name.trim());
@@ -157,6 +171,7 @@ function ProgramForm({ program, onClose }: { program: Program | null; onClose: (
       ...Object.fromEntries(Object.entries(f).map(([k, v]) => [k, num(v)])),
       goal_end_date: goalDate || null,
       period_type: periodType,
+      grading,
     };
     const courses = filled.map((r) => ({ code: r.code.trim(), name: r.name.trim(), credits: num(r.credits), term: num(r.term), prereqs: codes(r.prereqs), coreqs: codes(r.coreqs), done: r.done }));
     return run(async () => {
@@ -222,7 +237,20 @@ function ProgramForm({ program, onClose }: { program: Program | null; onClose: (
                     <input value={institution} onChange={(e) => setInstitution(e.target.value)} maxLength={120} placeholder="Ej. ITLA, UASD, PUCMM" className={fieldInput} />
                   </label>
                 </div>
-                {hint("Con los créditos totales se calcula lo que te falta y qué índice necesitas para tus metas. Si cargas el pénsum y dejas vacíos créditos y materias, se toman de ahí.")}
+                <div>
+                  <span className={fieldLabel}>Cómo se califica</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2" role="radiogroup" aria-label="Cómo se califica">
+                    {([["credits", "Por créditos", "Índice 0–4 ponderado por créditos, nota por materia"], ["average", "Por promedio", "Sin créditos: una nota final (0–100) por periodo"]] as const).map(([k, l, d]) => (
+                      <button key={k} type="button" role="radio" aria-checked={grading === k} onClick={() => changeGrading(k)}
+                        className={`text-left p-3 rounded-2xl border cursor-pointer ${grading === k ? "border-emerald-700 bg-emerald-50/60" : "border-zinc-200 hover:bg-zinc-50"}`}>
+                        <span className="block text-xs font-bold text-zinc-900">{l}</span>
+                        <span className="block text-[11px] text-zinc-500">{d}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {hint(avg ? "Con el total de periodos se calcula cuánto te falta y qué promedio necesitas para tus metas."
+                  : "Con los créditos totales se calcula lo que te falta y qué índice necesitas para tus metas. Si cargas el pénsum y dejas vacíos créditos y materias, se toman de ahí.")}
                 <div>
                   <span className={fieldLabel}>Tipo de periodo</span>
                   <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Tipo de periodo de la carrera">
@@ -235,12 +263,18 @@ function ProgramForm({ program, onClose }: { program: Program | null; onClose: (
                   </div>
                   <p className="mt-1 text-[10px] text-zinc-400">Los horarios nuevos de esta carrera lo toman solos, y la meta de tiempo cuenta en {PROGRAM_PERIODS[periodType]}.</p>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {numField("total_credits", "Créditos de la carrera", "1", rows?.length ? `Pénsum: ${pensumCredits}` : undefined)}
-                  {numField("total_subjects", "Materias de la carrera", "1", rows?.length ? `Pénsum: ${rows.length}` : undefined)}
-                  {numField("plan_periods", `Duración (${PROGRAM_PERIODS[periodType]})`, "1", `Ej. 7 ${PROGRAM_PERIODS[periodType]}`)}
-                  {numField("transfer_credits", "Créditos convalidados", "1", "Avanzan el pénsum, no el índice")}
-                </div>
+                {avg ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {numField("plan_periods", `Total de ${PROGRAM_PERIODS[periodType]}`, "1", "Ej. 12 niveles")}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {numField("total_credits", "Créditos de la carrera", "1", rows?.length ? `Pénsum: ${pensumCredits}` : undefined)}
+                    {numField("total_subjects", "Materias de la carrera", "1", rows?.length ? `Pénsum: ${rows.length}` : undefined)}
+                    {numField("plan_periods", `Duración (${PROGRAM_PERIODS[periodType]})`, "1", `Ej. 7 ${PROGRAM_PERIODS[periodType]}`)}
+                    {numField("transfer_credits", "Créditos convalidados", "1", "Avanzan el pénsum, no el índice")}
+                  </div>
+                )}
               </>
             )}
 
@@ -308,21 +342,21 @@ function ProgramForm({ program, onClose }: { program: Program | null; onClose: (
                 {hint("Tus honores, un índice propio y una fecha para terminar. En Análisis → Notas y carrera verás si es posible y qué necesitas.")}
                 <div className="flex items-center justify-between">
                   <h4 className="text-xs font-bold text-zinc-900">Honores</h4>
-                  <button type="button" onClick={() => setHonors((l) => [...l, { name: "", min: 3 }])} disabled={honors.length >= 8} className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 disabled:opacity-40 cursor-pointer"><Plus className="w-3.5 h-3.5" /> Honor</button>
+                  <button type="button" onClick={() => setHonors((l) => [...l, { name: "", min: avg ? 80 : 3 }])} disabled={honors.length >= 8} className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 disabled:opacity-40 cursor-pointer"><Plus className="w-3.5 h-3.5" /> Honor</button>
                 </div>
                 {honors.map((h, i) => (
                   <div key={i} className="grid grid-cols-[1fr_6rem_auto] gap-2 items-center">
                     <input value={h.name} maxLength={40} aria-label="Nombre del honor" onChange={(e) => setHonor(i, { name: e.target.value })} className={small} />
-                    <input type="number" min={0} max={5} step={0.01} value={h.min} aria-label="Índice mínimo" onChange={(e) => setHonor(i, { min: Number(e.target.value) })} className={small} />
+                    <input type="number" min={0} max={avg ? 100 : 5} step={avg ? 0.1 : 0.01} value={h.min} aria-label={avg ? "Promedio mínimo" : "Índice mínimo"} onChange={(e) => setHonor(i, { min: Number(e.target.value) })} className={small} />
                     <button type="button" onClick={() => setHonors((l) => l.filter((_, j) => j !== i))} aria-label="Quitar honor" className="p-2 rounded-xl text-zinc-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"><Trash2 className="w-4 h-4" /></button>
                   </div>
                 ))}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                   <label className="block">
-                    <span className={fieldLabel}>Índice deseado (opcional)</span>
-                    <input type="number" min={0} max={5} step={0.01} value={f.target_index} onChange={(e) => setF((x) => ({ ...x, target_index: e.target.value }))} className={small} />
+                    <span className={fieldLabel}>{avg ? "Promedio deseado (opcional)" : "Índice deseado (opcional)"}</span>
+                    <input type="number" min={0} max={avg ? 100 : 5} step={avg ? 0.1 : 0.01} value={f.target_index} onChange={(e) => setF((x) => ({ ...x, target_index: e.target.value }))} className={small} />
                     <span className={`block mt-0.5 text-[10px] ${maxIndex !== null && num(f.target_index) !== null && num(f.target_index)! > maxIndex ? "text-rose-600 font-semibold" : "text-zinc-400"}`}>
-                      {maxIndex !== null ? `Lo más alto que puedes llegar: ${maxIndex.toFixed(2)} (todo A en lo que falta)` : "Mismo cálculo que los honores, sin sus requisitos"}
+                      {maxIndex !== null ? `Lo más alto que puedes llegar: ${avg ? maxIndex : maxIndex.toFixed(2)} (${avg ? "100" : "todo A"} en lo que falta)` : "Mismo cálculo que los honores, sin sus requisitos"}
                     </span>
                   </label>
                   <label className="block">
@@ -343,10 +377,10 @@ function ProgramForm({ program, onClose }: { program: Program | null; onClose: (
               <>
                 {hint("Reglas de tu institución. Para honores, una materia reprobada en cualquier momento los anula, aunque la repitas y apruebes. Deja vacío lo que no aplique.")}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {numField("max_credits_per_period", "Límite de créditos por periodo", "1", "Lo máximo que puedes inscribir")}
-                  {numField("probation_min", "Índice mínimo (condición de prueba)", "0.01", "Por debajo = en prueba")}
+                  {!avg && numField("max_credits_per_period", "Límite de créditos por periodo", "1", "Lo máximo que puedes inscribir")}
+                  {numField("probation_min", avg ? "Nota mínima (condición de prueba)" : "Índice mínimo (condición de prueba)", avg ? "1" : "0.01", "Por debajo = en prueba")}
                   {numField("max_periods", "Permanencia máxima", "1", "En periodos")}
-                  {numField("min_institution_pct", "% mínimo cursado en la institución", "1", "Para honores, sin convalidar")}
+                  {!avg && numField("min_institution_pct", "% mínimo cursado en la institución", "1", "Para honores, sin convalidar")}
                 </div>
               </>
             )}
@@ -354,6 +388,13 @@ function ProgramForm({ program, onClose }: { program: Program | null; onClose: (
             {tab === "history" && (
               <>
                 {hint(<>Si no quieres registrar tus periodos pasados materia por materia, escribe aquí tu resumen; tu índice acumulado lo combinará con las notas de la app. Registrar los periodos (botón &quot;Periodo anterior&quot;) da un análisis más completo. <b>No repitas aquí lo que ya está como horario.</b></>)}
+                {avg ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {numField("prior_periods", "Periodos", "1", "Solo los que no están como horario")}
+                    {numField("prior_average", "Promedio de esos periodos", "0.1", "De 0 a 100")}
+                    {numField("prior_failed", "Reprobados", "1")}
+                  </div>
+                ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {numField("prior_periods", "Periodos", "1", "Solo los que no están como horario")}
                   {numField("prior_index", "Índice de esos periodos", "0.01")}
@@ -362,6 +403,7 @@ function ProgramForm({ program, onClose }: { program: Program | null; onClose: (
                   {numField("prior_passed", "Aprobadas")}
                   {numField("prior_failed", "Reprobadas")}
                 </div>
+                )}
               </>
             )}
 
