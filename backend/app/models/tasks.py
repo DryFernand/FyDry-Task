@@ -289,6 +289,9 @@ class Program(Base, TimestampMixin):
     total_credits = Column(Integer, nullable=True)
     total_subjects = Column(Integer, nullable=True)
     transfer_credits = Column(Integer, nullable=True)  # convalidados: avanzan el pénsum, no cuentan en el índice
+    plan_periods = Column(Integer, nullable=True)  # duración del pénsum en periodos
+    max_credits_per_period = Column(Integer, nullable=True)  # límite de inscripción de la institución
+    goal_end_date = Column(Date, nullable=True)  # meta: terminar la carrera para esta fecha
     # Metas y requisitos de honores
     honors = Column(JSON, nullable=False, default=lambda: [dict(x) for x in DEFAULT_HONORS])
     target_index = Column(Float, nullable=True)

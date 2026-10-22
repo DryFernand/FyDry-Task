@@ -401,6 +401,9 @@ class ProgramIn(BaseModel):
     total_credits: Optional[int] = Field(default=None, ge=1, le=1000)
     total_subjects: Optional[int] = Field(default=None, ge=1, le=500)
     transfer_credits: Optional[int] = Field(default=None, ge=0, le=1000)
+    plan_periods: Optional[int] = Field(default=None, ge=1, le=60)
+    max_credits_per_period: Optional[int] = Field(default=None, ge=1, le=100)
+    goal_end_date: Optional[dt.date] = None
     honors: Optional[List[HonorLevel]] = Field(default=None, max_length=8)
     target_index: Optional[float] = Field(default=None, ge=0, le=5)
     probation_min: Optional[float] = Field(default=None, ge=0, le=5)
@@ -453,6 +456,9 @@ class ProgramOut(CoreSchema):
     total_credits: Optional[int]
     total_subjects: Optional[int]
     transfer_credits: Optional[int]
+    plan_periods: Optional[int]
+    max_credits_per_period: Optional[int]
+    goal_end_date: Optional[dt.date]
     honors: List[dict]
     target_index: Optional[float]
     probation_min: Optional[float]

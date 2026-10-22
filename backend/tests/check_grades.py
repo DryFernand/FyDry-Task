@@ -143,6 +143,27 @@ subject(cur["id"], "Redes II", 4)
 assert ok(c.get(f"{API}/grades/analytics", params=T))["plan"]["periods_used"] == 1, "el periodo en curso no cuenta como terminado"
 ok(c.delete(f"{API}/schedules/{cur['id']}"), 204)
 assert any("Te faltan 28 créditos (7 materias)" in s for s in ok(c.get(f"{API}/grades/analytics", params=T))["insights"])
+assert (pl["periods_in_app"], pl["prior_periods"], pl["time_goal"]) == (1, 0, None)
+
+# Ritmo frente al pénsum: 12 cr/periodo, pero el límite es 10 -> 3 periodos más; 1 + 3 = 4 del pénsum
+ok(c.put(f"{API}/programs/{CID}", json={"plan_periods": 4, "max_credits_per_period": 10}))
+pace = ok(c.get(f"{API}/grades/analytics", params=T))["plan"]["pace"]
+assert (pace["pensum_rate"], pace["your_rate"], pace["projected_total"], pace["delta"]) == (10.0, 12.0, 4, 0), pace
+assert (pace["fastest_left"], pace["projected_end"]) == (3, "2027-10-20"), pace
+# Meta: terminar antes del 30-jun-2027 -> caben 2 cuatrimestres (hasta 20-feb y 20-jun): 14 cr c/u > límite 10
+ok(c.put(f"{API}/programs/{CID}", json={"goal_end_date": "2027-06-30"}))
+g = ok(c.get(f"{API}/grades/analytics", params=T))["plan"]["time_goal"]
+assert (g["periods_available"], g["credits_per_period"], g["status"], g["leftover"]) == (2, 14, "imposible", 8), g
+assert [x["credits"] for x in g["periods"]] == [10, 10] and g["periods"][1]["end"] == "2027-06-20"
+ok(c.put(f"{API}/programs/{CID}", json={"goal_end_date": "2027-01-15"}))
+g = ok(c.get(f"{API}/grades/analytics", params=T))["plan"]["time_goal"]
+assert (g["credits_per_period"], g["status"], g["next_end"], g["earliest_end"]) == (None, "imposible", "2027-02-20", "2027-10-20"), g
+ok(c.put(f"{API}/programs/{CID}", json={"goal_end_date": "2027-06-30", "max_credits_per_period": None}))
+assert ok(c.get(f"{API}/grades/analytics", params=T))["plan"]["time_goal"]["status"] == "exigente", "14 > 12 que sueles inscribir"
+ok(c.put(f"{API}/programs/{CID}", json={"goal_end_date": "2028-12-31"}))
+g = ok(c.get(f"{API}/grades/analytics", params=T))["plan"]["time_goal"]
+assert (g["status"], [x["credits"] for x in g["periods"]]) == ("posible", [5, 5, 5, 5, 4, 4]), g
+ok(c.put(f"{API}/programs/{CID}", json={"goal_end_date": None, "plan_periods": None}))
 
 # Una F descalifica los honores, pero el índice deseado se sigue calculando
 f = subject(pc["id"], "Física", 4)

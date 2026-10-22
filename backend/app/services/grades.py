@@ -4,14 +4,16 @@
 con sus créditos. El historial manual (índice y créditos previos) se suma como un bloque más.
 Todo se calcula por carrera: cada carrera agrupa sus horarios con su escala e historial.
 """
+import calendar
 import math
-from datetime import date
+from datetime import date, timedelta
 from typing import Dict, List, Optional
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.models import Program, Schedule, Subject
+from app.services.schedules import PERIOD_MONTHS
 
 
 def get_programs(db: Session, user_id: str) -> List[Program]:
@@ -62,10 +64,14 @@ def compute(db: Session, user_id: str, today: date, program_id: Optional[str] = 
 
     graded, pending, in_progress, in_progress_credits = [], [], 0, 0
     finished = set()  # periodos terminados; el que está en curso cuenta entre los que faltan
+    current, period_type = None, None
     periods: Dict[str, Dict] = {}
     for subj, sch in rows:
+        period_type = sch.period_type  # el del periodo más reciente marca la duración de los que vienen
         if sch.end_date < today:
             finished.add(sch.id)
+        elif sch.start_date <= today:
+            current = sch
         if subj.final_grade is None:
             if sch.end_date < today:
                 pending.append({"subject_id": subj.id, "name": subj.name, "schedule": sch.name})
@@ -144,7 +150,9 @@ def compute(db: Session, user_id: str, today: date, program_id: Optional[str] = 
         "subjects": sorted(graded, key=lambda g: -g["grade"]),
         "evolution": evolution,
     }
-    m["plan"] = plan(m, st, cum_pc, in_progress_credits, (st.prior_periods or 0) + len(finished))
+    timeline = {"today": today, "finished": len(finished), "current": current,
+                "months": PERIOD_MONTHS.get(period_type or "cuatrimestral")}
+    m["plan"] = plan(m, st, cum_pc, in_progress_credits, timeline)
     m["insights"] = insights(m)
     return m
 
@@ -153,7 +161,13 @@ def _normal_cdf(z: float) -> float:
     return 0.5 * (1 + math.erf(z / math.sqrt(2)))
 
 
-def plan(m: Dict, st: Program, pc: float, in_progress_credits: int, periods_used: int) -> Dict:
+def _add_months(d: date, n: int) -> date:
+    y, mo = divmod(d.month - 1 + n, 12)
+    y, mo = d.year + y, mo + 1
+    return date(y, mo, min(d.day, calendar.monthrange(y, mo)[1]))
+
+
+def plan(m: Dict, st: Program, pc: float, in_progress_credits: int, timeline: Dict) -> Dict:
     """Lo que falta de la carrera y, por cada meta (honores o índice deseado), qué índice necesitas
     en los créditos restantes, cuánto margen tienes y una probabilidad estimada.
 
@@ -171,8 +185,34 @@ def plan(m: Dict, st: Program, pc: float, in_progress_credits: int, periods_used
     avg_cr = (st.total_credits / st.total_subjects if st.total_credits and st.total_subjects
               else sum(s["credits"] for s in with_cr) / len(with_cr) if with_cr else None)
     per_period = [e["credits"] for e in m["evolution"] if e["credits"]]
-    periods_left = (0 if remaining == 0 else
-                    math.ceil(remaining / (sum(per_period) / len(per_period))) if remaining and per_period else None)
+    rate = sum(per_period) / len(per_period) if per_period else None  # tus créditos por periodo
+    limit = st.max_credits_per_period
+    pace_rate = min(rate, limit) if rate and limit else rate
+    # Incluye el periodo en curso: sus créditos todavía están entre los que faltan
+    periods_left = 0 if remaining == 0 else math.ceil(remaining / pace_rate) if remaining and pace_rate else None
+    periods_used = (st.prior_periods or 0) + timeline["finished"]
+    pm, today, cur = timeline["months"], timeline["today"], timeline["current"]
+
+    def end_after(k: int) -> Optional[str]:
+        """Fin del k-ésimo periodo contando el que está en curso como el primero."""
+        if not pm or k <= 0:
+            return None
+        if cur:
+            return (_add_months(cur.end_date + timedelta(days=1), (k - 1) * pm) - timedelta(days=1)).isoformat()
+        return (_add_months(today, k * pm) - timedelta(days=1)).isoformat()
+
+    projected = periods_used + periods_left if periods_left is not None else None
+    pace = {
+        "plan_periods": st.plan_periods,
+        "pensum_rate": round(st.total_credits / st.plan_periods, 1) if st.total_credits and st.plan_periods else None,
+        "your_rate": round(rate, 1) if rate else None,
+        "limit": limit,
+        "projected_total": projected,
+        "delta": projected - st.plan_periods if projected is not None and st.plan_periods else None,  # < 0 = adelantado
+        "projected_end": end_after(periods_left or 0),
+        "fastest_left": math.ceil(remaining / limit) if remaining and limit else None,
+        "fastest_end": end_after(math.ceil(remaining / limit)) if remaining and limit else None,
+    }
 
     # Probabilidad: tus puntos por materia (ponderados por créditos) como una normal.
     # ponytail: supone materias independientes con un piso de incertidumbre de 0.15 en tu nivel;
@@ -231,12 +271,73 @@ def plan(m: Dict, st: Program, pc: float, in_progress_credits: int, periods_used
         "subjects_remaining": max(st.total_subjects - m["passed"], 0) if st.total_subjects else None,
         "progress": round(min((done + transfer) / st.total_credits, 1), 3) if st.total_credits else None,
         "periods_used": periods_used,
+        "periods_in_app": timeline["finished"],
+        "prior_periods": st.prior_periods or 0,
         "periods_left": periods_left,
+        "pace": pace,
+        "time_goal": time_goal(st, remaining, in_progress_credits, rate, avg_cr, timeline, pace["fastest_end"] or pace["projected_end"]),
         "max_periods": st.max_periods,
         "expected_points": round(mu, 2) if mu is not None else None,
         "eligible": eligible,
         "requirements": reqs,
         "targets": targets,
+    }
+
+
+def time_goal(st: Program, remaining: Optional[int], in_progress_credits: int, rate: Optional[float],
+              avg_cr: Optional[float], timeline: Dict, earliest_end: Optional[str]) -> Optional[Dict]:
+    """Meta de terminar para una fecha: cuántos periodos caben y cuántos créditos tocan en cada uno."""
+    pm, today, cur = timeline["months"], timeline["today"], timeline["current"]
+    goal = st.goal_end_date
+    if not goal or not remaining or not pm:
+        return None
+    limit = st.max_credits_per_period
+    slots = []  # periodos completos que terminan antes de la fecha meta (después del que está en curso)
+    start = cur.end_date + timedelta(days=1) if cur else today
+    next_end = _add_months(start, pm) - timedelta(days=1)
+    while len(slots) < 60:
+        end = _add_months(start, pm) - timedelta(days=1)
+        if end > goal:
+            break
+        slots.append((start, end))
+        start = end + timedelta(days=1)
+    rest = remaining - (in_progress_credits if cur else 0)
+    n = len(slots)
+    per = (math.ceil(rest / n) if n else None) if rest > 0 else 0  # None = no cabe ningún periodo
+    if rest <= 0:
+        status = "posible"
+    elif not n or (limit and per > limit):
+        status = "imposible"
+    elif rate and per > rate * 1.1:
+        status = "exigente"  # más de lo que sueles inscribir
+    else:
+        status = "posible"
+    periods = []
+    if cur:
+        periods.append({"start": cur.start_date.isoformat(), "end": cur.end_date.isoformat(), "credits": in_progress_credits, "in_progress": True})
+    base, extra = divmod(max(rest, 0), n) if n else (0, 0)
+    for i, (a, b) in enumerate(slots):
+        cr = base + (1 if i < extra else 0)
+        if limit:
+            cr = min(cr, limit)
+        if cr:
+            periods.append({"start": a.isoformat(), "end": b.isoformat(), "credits": cr, "in_progress": False})
+    for x in periods:
+        x["subjects"] = round(x["credits"] / avg_cr) if avg_cr else None
+    planned = sum(x["credits"] for x in periods if not x["in_progress"])
+    return {
+        "end_date": goal.isoformat(),
+        "months": max(round((goal - today).days / 30.44), 0),
+        "periods_available": n + (1 if cur else 0),
+        "credits_per_period": per,
+        "subjects_per_period": round(per / avg_cr, 1) if avg_cr and per else None,
+        "next_end": next_end.isoformat(),
+        "earliest_end": earliest_end,
+        "your_rate": round(rate, 1) if rate else None,
+        "limit": limit,
+        "status": status,
+        "periods": periods,
+        "leftover": max(rest - planned, 0),  # créditos que no caben antes de la fecha
     }
 
 
@@ -317,6 +418,22 @@ def insights(m: Dict) -> List[str]:
         if p["periods_left"]:
             left += f", unos {p['periods_left']} periodo(s) a tu ritmo"
         out.append(left + ".")
+        pace = p["pace"]
+        if pace["delta"] is not None:
+            when = "al día con" if pace["delta"] == 0 else f"{abs(pace['delta'])} periodo(s) {'antes' if pace['delta'] < 0 else 'después'} de"
+            out.append(f"A tu ritmo terminas en {pace['projected_total']} periodos, {when} los {pace['plan_periods']} del pénsum.")
+        g = p["time_goal"]
+        if g:
+            if g["status"] == "imposible":
+                soonest = f" Lo más pronto sería hacia {g['earliest_end']}." if g["earliest_end"] else ""
+                if g["credits_per_period"] is None:
+                    out.append(f"Terminar para {g['end_date']} no cabe: el próximo periodo completo termina el {g['next_end']}.{soonest}")
+                else:
+                    out.append(f"Terminar para {g['end_date']} no cabe: necesitarías {g['credits_per_period']} créditos por periodo"
+                               + (f" y el límite es {g['limit']}." if g["limit"] else ".") + soonest)
+            else:
+                out.append(f"Para terminar en {g['months']} meses necesitas unos {g['credits_per_period']} créditos por periodo"
+                           + (f" (sueles inscribir {g['your_rate']:g})." if g["your_rate"] else "."))
         reach = [t for t in p["targets"] if t["status"] in ("asegurado", "en_camino", "exigente")]
         if reach:
             t = reach[0]

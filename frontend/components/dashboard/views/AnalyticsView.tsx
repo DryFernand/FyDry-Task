@@ -432,7 +432,7 @@ function GradesSection({ g }: { g: GradesAnalytics }) {
           </Card>
           <Card title="Índice por periodo" icon={BarChart3}>
             {g.evolution.map((e) => <IndexRow key={e.schedule_id} label={e.name} value={e.period_index} sub={`acum. ${e.cumulative_index?.toFixed(2) ?? "—"}`} max={maxPoints} />)}
-            {g.has_prior && <p className="mt-2 text-[11px] text-zinc-400">El acumulado parte de tu historial manual (índice {g.prior.index ?? "—"} con {g.prior.credits ?? 0} créditos).</p>}
+            {g.prior.index !== null && <p className="mt-2 text-[11px] text-zinc-400">El acumulado parte de tu historial manual (índice {g.prior.index} con {g.prior.credits ?? 0} créditos).</p>}
           </Card>
           <Card title="Tus materias" icon={GraduationCap} className="lg:col-span-2">
             <ul className="divide-y divide-zinc-100">
@@ -541,9 +541,14 @@ function CareerPlan({ p, max }: { p: GradesPlan; max: number }) {
           {p.subjects_remaining !== null && <><dt className="text-zinc-500">Materias por aprobar</dt><dd className="text-right font-semibold tabular-nums">{p.subjects_remaining}</dd></>}
           {p.credits_in_progress > 0 && <><dt className="text-zinc-500">En curso ahora</dt><dd className="text-right font-semibold tabular-nums">{p.credits_in_progress} cr</dd></>}
           {p.transfer_credits > 0 && <><dt className="text-zinc-500">Convalidados</dt><dd className="text-right font-semibold tabular-nums">{p.transfer_credits} cr</dd></>}
-          <dt className="text-zinc-500">Periodos terminados</dt><dd className="text-right font-semibold tabular-nums">{p.periods_used}{p.max_periods ? ` de ${p.max_periods}` : ""}</dd>
-          {p.periods_left !== null && <><dt className="text-zinc-500">Periodos a tu ritmo</dt><dd className="text-right font-semibold tabular-nums">{p.periods_left}</dd></>}
+          <dt className="text-zinc-500">Periodos terminados</dt>
+          <dd className="text-right font-semibold tabular-nums">
+            {p.periods_used}{p.max_periods ? ` de ${p.max_periods} máx.` : ""}
+            {p.prior_periods > 0 && <span className="block text-[10px] font-normal text-zinc-400">{p.periods_in_app} en la app + {p.prior_periods} sin registrar</span>}
+          </dd>
+          {p.periods_left !== null && <><dt className="text-zinc-500">Te faltan a tu ritmo</dt><dd className="text-right font-semibold tabular-nums">{p.periods_left} periodo(s)</dd></>}
         </dl>
+        <Pace p={p} />
       </Card>
       <Card title="Metas de índice" icon={Target} className="lg:col-span-2">
         {p.targets.length === 0 ? (
@@ -555,6 +560,7 @@ function CareerPlan({ p, max }: { p: GradesPlan; max: number }) {
           <p className="mt-3 text-[11px] text-zinc-400">La probabilidad es una estimación con tu rendimiento por materia (promedio {p.expected_points.toFixed(2)} puntos) y su variación; no es una garantía.</p>
         )}
       </Card>
+      <TimeGoal p={p} />
       <Card title="Requisitos de honores" icon={ShieldCheck} className="lg:col-span-3">
         <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
           {p.requirements.map((r) => (
@@ -567,5 +573,105 @@ function CareerPlan({ p, max }: { p: GradesPlan; max: number }) {
         <p className="mt-3 text-[11px] text-zinc-400">{p.eligible ? "Hasta ahora cumples los requisitos conocidos (los marcados con ? no se pueden verificar)." : "Con lo marcado en rojo pierdes los honores; tu índice deseado se sigue calculando."}</p>
       </Card>
     </div>
+  );
+}
+
+const shortDate = (iso: string) => formatDay(iso, { day: "numeric", month: "short", year: "numeric" });
+
+/** Tu ritmo frente a la duración del pénsum y al límite de créditos. */
+function Pace({ p }: { p: GradesPlan }) {
+  const x = p.pace;
+  if (x.your_rate === null && x.plan_periods === null && x.limit === null) return null;
+  const tone = x.delta === null ? "" : x.delta < 0 ? "text-green-700" : x.delta > 0 ? "text-amber-700" : "text-zinc-700";
+  return (
+    <div className="mt-4 pt-3 border-t border-zinc-100 space-y-1.5 text-xs">
+      <div className="font-bold text-zinc-900">Ritmo</div>
+      <dl className="grid grid-cols-2 gap-y-1.5">
+        {x.your_rate !== null && <><dt className="text-zinc-500">Inscribes</dt><dd className="text-right font-semibold tabular-nums">{x.your_rate} cr/periodo</dd></>}
+        {x.pensum_rate !== null && <><dt className="text-zinc-500">El pénsum pide</dt><dd className="text-right font-semibold tabular-nums">{x.pensum_rate} cr/periodo</dd></>}
+        {x.limit !== null && <><dt className="text-zinc-500">Límite</dt><dd className="text-right font-semibold tabular-nums">{x.limit} cr/periodo</dd></>}
+        {x.projected_total !== null && (
+          <>
+            <dt className="text-zinc-500">Terminarías en</dt>
+            <dd className="text-right font-semibold tabular-nums">
+              {x.projected_total} periodos{x.plan_periods ? ` de ${x.plan_periods}` : ""}
+              {x.projected_end && <span className="block text-[10px] font-normal text-zinc-400">≈ {shortDate(x.projected_end)}</span>}
+            </dd>
+          </>
+        )}
+        {x.fastest_left !== null && x.fastest_end && (
+          <><dt className="text-zinc-500">Lo más rápido</dt><dd className="text-right font-semibold tabular-nums">{x.fastest_left} periodo(s)<span className="block text-[10px] font-normal text-zinc-400">≈ {shortDate(x.fastest_end)}, al límite</span></dd></>
+        )}
+      </dl>
+      {x.delta !== null && (
+        <p className={`font-semibold ${tone}`}>
+          {x.delta === 0 ? "Vas al día con el pénsum." : `Vas ${Math.abs(x.delta)} periodo(s) ${x.delta < 0 ? "adelantado" : "atrasado"} respecto al pénsum.`}
+        </p>
+      )}
+    </div>
+  );
+}
+
+const GOAL_META = {
+  posible: { label: "Posible", className: "bg-green-50 text-green-700 border-green-200" },
+  exigente: { label: "Exigente", className: "bg-amber-50 text-amber-800 border-amber-200" },
+  imposible: { label: "No cabe", className: "bg-rose-50 text-rose-700 border-rose-200" },
+} as const;
+
+/** Meta de terminar para una fecha: plan por periodo con los créditos que tocan. */
+function TimeGoal({ p }: { p: GradesPlan }) {
+  const g = p.time_goal;
+  if (!g) {
+    return (
+      <Card title="Meta de tiempo" icon={Flag} className="lg:col-span-3">
+        <p className="text-xs text-zinc-500">Pon una fecha en <b>Carrera e historial → Metas → Terminar la carrera para</b> (ej. en 6 meses) y aquí verás si es posible y un plan de créditos por periodo.</p>
+      </Card>
+    );
+  }
+  const meta = GOAL_META[g.status];
+  return (
+    <Card title={`Meta: terminar para el ${shortDate(g.end_date)}`} icon={Flag} className="lg:col-span-3">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex flex-wrap gap-6">
+          <div>
+            <div className="text-xl font-bold tabular-nums text-zinc-950">{g.credits_per_period ?? "—"}</div>
+            <div className="text-[10px] text-zinc-500">créditos por periodo{g.subjects_per_period !== null ? ` · ≈${g.subjects_per_period} materias` : ""}</div>
+          </div>
+          <div>
+            <div className="text-xl font-bold tabular-nums text-zinc-950">{g.periods_available}</div>
+            <div className="text-[10px] text-zinc-500">periodo(s) en {g.months} meses</div>
+          </div>
+          {g.your_rate !== null && (
+            <div>
+              <div className="text-xl font-bold tabular-nums text-zinc-950">{g.your_rate}</div>
+              <div className="text-[10px] text-zinc-500">créditos que sueles inscribir</div>
+            </div>
+          )}
+        </div>
+        <span className={`px-2 py-0.5 rounded-full border text-[10px] font-semibold ${meta.className}`}>{meta.label}</span>
+      </div>
+      {g.periods.length > 0 && (
+        <ol className="mt-4 divide-y divide-zinc-100">
+          {g.periods.map((x, i) => (
+            <li key={x.start} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-xs">
+              <span className="w-20 font-semibold text-zinc-900">Periodo {i + 1}</span>
+              <span className="flex-1 min-w-0 text-zinc-500">{shortDate(x.start)} – {shortDate(x.end)}{x.in_progress && " · en curso"}</span>
+              <span className="font-semibold tabular-nums text-zinc-900">{x.credits} cr{x.subjects !== null && <span className="font-normal text-zinc-400"> · ≈{x.subjects} materias</span>}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+      <p className="mt-3 text-[11px] text-zinc-500">
+        {g.status === "imposible"
+          ? (g.credits_per_period === null
+              ? `No cabe ningún periodo completo antes de esa fecha: el próximo termina el ${shortDate(g.next_end)}.`
+              : `Aun al límite${g.limit ? ` de ${g.limit} créditos` : ""} quedarían ${g.leftover} créditos fuera.`)
+            + (g.earliest_end ? ` Lo más pronto que terminarías: ≈ ${shortDate(g.earliest_end)}.` : "")
+          : g.status === "exigente"
+            ? "Es más carga de la que sueles inscribir: ojo con tu índice, cada crédito extra pesa en tus metas."
+            : "Cabe a un ritmo que ya has llevado."}
+        {" "}Los periodos se calculan con la duración de tu horario más reciente.
+      </p>
+    </Card>
   );
 }

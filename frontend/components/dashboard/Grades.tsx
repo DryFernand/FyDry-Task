@@ -7,6 +7,12 @@ import { fieldInput, fieldLabel } from "./TaskFormModal";
 import { useDash } from "./DashContext";
 import { api, GradeBand, HonorLevel, letterFor, Program, Schedule, todayISO } from "@/lib/tasks";
 
+const addMonths = (iso: string, n: number) => {
+  const d = new Date(`${iso}T12:00:00`);
+  d.setMonth(d.getMonth() + n);
+  return d.toISOString().slice(0, 10);
+};
+
 export const statusBadge = (passed: boolean | null) =>
   passed === null ? null : passed ? (
     <span className="px-2 py-0.5 rounded-full border text-[10px] font-semibold bg-green-50 text-green-700 border-green-200">✓ Aprobada</span>
@@ -122,10 +128,12 @@ function ProgramForm({ program, onClose }: { program: Program | null; onClose: (
   const [honors, setHonors] = useState<HonorLevel[]>(p?.honors ?? DEFAULT_HONORS);
   const [f, setF] = useState({
     total_credits: str(p?.total_credits), total_subjects: str(p?.total_subjects), transfer_credits: str(p?.transfer_credits),
+    plan_periods: str(p?.plan_periods), max_credits_per_period: str(p?.max_credits_per_period),
     target_index: str(p?.target_index), probation_min: str(p ? p.probation_min : 2), max_periods: str(p?.max_periods),
     min_institution_pct: str(p ? p.min_institution_pct : 50), prior_periods: str(p?.prior_periods),
     prior_index: str(p?.prior_index), prior_credits: str(p?.prior_credits), prior_courses: str(p?.prior_courses), prior_passed: str(p?.prior_passed), prior_failed: str(p?.prior_failed),
   });
+  const [goalDate, setGoalDate] = useState(p?.goal_end_date ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const isMain = !!p && programs[0]?.id === p.id;
@@ -157,6 +165,7 @@ function ProgramForm({ program, onClose }: { program: Program | null; onClose: (
       pass_min: Number(passMin),
       honors: honors.filter((h) => h.name.trim()).map((h) => ({ name: h.name.trim(), min: Number(h.min) })),
       ...Object.fromEntries(Object.entries(f).map(([k, v]) => [k, num(v)])),
+      goal_end_date: goalDate || null,
     };
     return run(() => (p ? api.updateProgram(p.id, data) : api.createProgram(data)), p ? "Carrera guardada." : "Carrera creada.");
   };
@@ -201,16 +210,17 @@ function ProgramForm({ program, onClose }: { program: Program | null; onClose: (
         <section className="space-y-2">
           <h3 className="text-xs font-bold text-zinc-900">Pénsum</h3>
           <p className="text-[11px] text-zinc-500">Con los créditos totales se calcula lo que te falta y qué índice necesitas para tus metas.</p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {numField("total_credits", "Créditos de la carrera")}
             {numField("total_subjects", "Materias de la carrera")}
-            {numField("transfer_credits", "Créditos convalidados", "1", "Avanzan el pénsum, no cuentan en el índice")}
+            {numField("plan_periods", "Duración (periodos)", "1", "Ej. 7 cuatrimestres")}
+            {numField("transfer_credits", "Créditos convalidados", "1", "Avanzan el pénsum, no el índice")}
           </div>
         </section>
 
         <section className="space-y-2">
           <div className="flex items-center justify-between">
-            <h3 className="text-xs font-bold text-zinc-900">Metas: honores e índice deseado</h3>
+            <h3 className="text-xs font-bold text-zinc-900">Metas</h3>
             <button type="button" onClick={() => setHonors((l) => [...l, { name: "", min: 3 }])} disabled={honors.length >= 8} className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 disabled:opacity-40 cursor-pointer"><Plus className="w-3.5 h-3.5" /> Honor</button>
           </div>
           {honors.map((h, i) => (
@@ -220,21 +230,34 @@ function ProgramForm({ program, onClose }: { program: Program | null; onClose: (
               <button type="button" onClick={() => setHonors((l) => l.filter((_, j) => j !== i))} aria-label="Quitar honor" className="p-2 rounded-xl text-zinc-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"><Trash2 className="w-4 h-4" /></button>
             </div>
           ))}
-          <div className="grid grid-cols-[1fr_6rem_auto] gap-2 items-center">
-            <span className="text-xs text-zinc-700 pl-1">Índice deseado (opcional, no requiere los requisitos de honores)</span>
-            <input type="number" min={0} max={5} step={0.01} value={f.target_index} aria-label="Índice deseado" onChange={(e) => setF((x) => ({ ...x, target_index: e.target.value }))} className={small} />
-            <span className="w-8" />
+          <p className="text-[11px] text-zinc-500">Honores (arriba), un índice propio y una fecha para terminar. El análisis te dice si es posible y qué necesitas.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+            <label className="block">
+              <span className={fieldLabel}>Índice deseado (opcional)</span>
+              <input type="number" min={0} max={5} step={0.01} value={f.target_index} onChange={(e) => setF((x) => ({ ...x, target_index: e.target.value }))} className={small} />
+              <span className="block mt-0.5 text-[10px] text-zinc-400">No exige los requisitos de honores</span>
+            </label>
+            <label className="block">
+              <span className={fieldLabel}>Terminar la carrera para (opcional)</span>
+              <input type="date" value={goalDate} min={todayISO()} onChange={(e) => setGoalDate(e.target.value)} className={small} />
+              <span className="flex flex-wrap gap-1 mt-1">
+                {[6, 12, 18, 24].map((mo) => (
+                  <button key={mo} type="button" onClick={() => setGoalDate(addMonths(todayISO(), mo))} className="px-2 py-0.5 rounded-lg border border-zinc-200 text-[10px] font-semibold text-zinc-600 hover:bg-zinc-50 cursor-pointer">{mo} meses</button>
+                ))}
+                {goalDate && <button type="button" onClick={() => setGoalDate("")} className="px-2 py-0.5 text-[10px] font-semibold text-zinc-400 hover:text-rose-600 cursor-pointer">Quitar</button>}
+              </span>
+            </label>
           </div>
         </section>
 
         <section className="space-y-2">
-          <h3 className="text-xs font-bold text-zinc-900">Requisitos de honores</h3>
-          <p className="text-[11px] text-zinc-500">Una materia reprobada en cualquier momento anula los honores, aunque la repitas y apruebes. Deja vacío lo que tu institución no exija.</p>
+          <h3 className="text-xs font-bold text-zinc-900">Reglas de la institución</h3>
+          <p className="text-[11px] text-zinc-500">Para honores, una materia reprobada en cualquier momento los anula, aunque la repitas y apruebes. Deja vacío lo que tu institución no exija.</p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {numField("max_credits_per_period", "Límite de créditos", "1", "Por periodo")}
             {numField("probation_min", "Índice mínimo (prueba)", "0.01", "Por debajo = condición de prueba")}
             {numField("max_periods", "Permanencia máxima", "1", "En periodos")}
-            {numField("prior_periods", "Periodos sin registrar", "1", "Solo los que no están como horario")}
-            {numField("min_institution_pct", "% mínimo en la institución", "1", "Del pénsum, sin convalidar")}
+            {numField("min_institution_pct", "% mínimo en la institución", "1", "Para honores, sin convalidar")}
           </div>
         </section>
 
@@ -244,7 +267,8 @@ function ProgramForm({ program, onClose }: { program: Program | null; onClose: (
             Si no quieres registrar tus periodos pasados materia por materia, escribe aquí tu resumen. Tu índice acumulado combinará esto con las notas que registres en la app.
             Registrar los periodos anteriores (botón &quot;Periodo anterior&quot;) da un análisis más completo.
           </p>
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
+            {numField("prior_periods", "Periodos", "1", "Solo los que no están como horario")}
             {numField("prior_index", "Índice actual", "0.01")}
             {numField("prior_credits", "Créditos cursados")}
             {numField("prior_courses", "Materias cursadas")}

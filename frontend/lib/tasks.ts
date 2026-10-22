@@ -274,6 +274,9 @@ export interface Program {
   total_credits: number | null;
   total_subjects: number | null;
   transfer_credits: number | null;
+  plan_periods: number | null;
+  max_credits_per_period: number | null;
+  goal_end_date: string | null;
   honors: HonorLevel[];
   target_index: number | null;
   probation_min: number | null;
@@ -304,7 +307,34 @@ export interface GradesPlan {
   subjects_remaining: number | null;
   progress: number | null;
   periods_used: number;
+  periods_in_app: number;
+  prior_periods: number;
   periods_left: number | null;
+  pace: {
+    plan_periods: number | null;
+    pensum_rate: number | null;
+    your_rate: number | null;
+    limit: number | null;
+    projected_total: number | null;
+    delta: number | null;
+    projected_end: string | null;
+    fastest_left: number | null;
+    fastest_end: string | null;
+  };
+  time_goal: {
+    end_date: string;
+    months: number;
+    periods_available: number;
+    credits_per_period: number | null;
+    subjects_per_period: number | null;
+    next_end: string;
+    earliest_end: string | null;
+    your_rate: number | null;
+    limit: number | null;
+    status: "posible" | "exigente" | "imposible";
+    periods: { start: string; end: string; credits: number; subjects: number | null; in_progress: boolean }[];
+    leftover: number;
+  } | null;
   max_periods: number | null;
   expected_points: number | null;
   eligible: boolean;
