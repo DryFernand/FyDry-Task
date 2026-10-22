@@ -321,6 +321,7 @@ class SubjectIn(BaseModel):
     modality: Literal["presencial", "virtual", "mixta"] = "presencial"
     location: Optional[str] = Field(default=None, max_length=120)
     link: Optional[str] = Field(default=None, max_length=500)
+    course_id: Optional[str] = None  # materia del pénsum que cursa
     sessions: List[SessionIn] = Field(default_factory=list, max_length=21)
 
 
@@ -348,6 +349,7 @@ class SubjectOut(CoreSchema):
     weekly_minutes: int = 0
     assignments: dict = {}
     final_grade: Optional[float] = None
+    course_id: Optional[str] = None
     letter: Optional[str] = None
     passed: Optional[bool] = None
 
@@ -464,3 +466,17 @@ class ProgramOut(CoreSchema):
     probation_min: Optional[float]
     max_periods: Optional[int]
     min_institution_pct: Optional[int]
+
+
+class CourseIn(BaseModel):
+    code: str = Field(min_length=1, max_length=30)
+    name: str = Field(min_length=1, max_length=150)
+    credits: Optional[int] = Field(default=None, ge=0, le=60)
+    term: Optional[int] = Field(default=None, ge=1, le=60)
+    prereqs: List[str] = Field(default_factory=list, max_length=20)
+    coreqs: List[str] = Field(default_factory=list, max_length=20)
+    done: bool = False
+
+
+class CoursesIn(BaseModel):
+    courses: List[CourseIn] = Field(max_length=300)

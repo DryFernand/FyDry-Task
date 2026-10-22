@@ -7,7 +7,7 @@ import TaskRow from "./TaskRow";
 import { fieldInput, fieldLabel } from "./TaskFormModal";
 import { useDash } from "./DashContext";
 import {
-  api, hoursLabel, Modality, PERIOD_META, PeriodType, Schedule, SessionInput, Subject, suggestedEnd, Task, todayISO, WEEKDAY_LONG,
+  api, Course, hoursLabel, Modality, PERIOD_META, PeriodType, Schedule, SessionInput, Subject, suggestedEnd, Task, todayISO, WEEKDAY_LONG,
 } from "@/lib/tasks";
 
 const SUBJECT_COLORS = ["#6e2234", "#2563eb", "#16a34a", "#d97706", "#7c3aed", "#0891b2", "#db2777", "#52525b"];
@@ -127,8 +127,11 @@ export function SubjectFormModal({ target, onClose, onSaved }: { target: Subject
 }
 
 function SubjectForm({ target, onClose, onSaved }: { target: SubjectFormTarget; onClose: () => void; onSaved: () => void }) {
-  const { onInfo } = useDash();
+  const { onInfo, schedules } = useDash();
   const src = target.kind === "edit" ? target.subject : null;
+  const programId = schedules.find((x) => x.id === (src ? src.schedule_id : target.kind === "new" ? target.scheduleId : ""))?.program_id;
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [courseId, setCourseId] = useState<string | null>(src?.course_id ?? null);
   const [name, setName] = useState(src?.name ?? "");
   const [code, setCode] = useState(src?.code ?? "");
   const [teacher, setTeacher] = useState(src?.teacher ?? "");
@@ -143,6 +146,23 @@ function SubjectForm({ target, onClose, onSaved }: { target: SubjectFormTarget; 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  useEffect(() => {
+    if (programId) api.courses(programId).then((r) => setCourses(r.courses)).catch(() => setCourses([]));
+  }, [programId]);
+
+  const course = courses.find((c) => c.id === courseId);
+  const open = courses.filter((c) => c.status === "disponible" || c.id === courseId);
+  const locked = courses.filter((c) => c.status === "bloqueada" && c.id !== courseId);
+  const byCode = (code: string) => courses.find((c) => c.code === code);
+  const pick = (id: string) => {
+    const c = courses.find((x) => x.id === id);
+    setCourseId(c?.id ?? null);
+    if (!c) return;
+    setName(c.name);
+    setCode(c.code);
+    setCredits(c.credits != null ? String(c.credits) : "");
+  };
+
   const setSession = (i: number, patch: Partial<SessionInput>) => setSessions((list) => list.map((s, j) => (j === i ? { ...s, ...patch } : s)));
 
   const save = async () => {
@@ -153,7 +173,7 @@ function SubjectForm({ target, onClose, onSaved }: { target: SubjectFormTarget; 
     setError("");
     const data = {
       name: name.trim(), code: code.trim() || null, teacher: teacher.trim() || null, color, credits: credits ? Number(credits) : null,
-      modality, location: location.trim() || null, link: link.trim() || null,
+      modality, location: location.trim() || null, link: link.trim() || null, course_id: courseId,
       sessions: sessions.map((s) => ({ ...s, location: (s.location || "").trim() || null })),
     };
     try {
@@ -173,6 +193,26 @@ function SubjectForm({ target, onClose, onSaved }: { target: SubjectFormTarget; 
   return (
     <Modal open wide onClose={onClose} title={src ? `Editar ${src.name}` : "Nueva materia"} footer={<SaveFooter onClose={onClose} onSave={save} saving={saving} />}>
       <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); save(); }}>
+        {courses.length > 0 && (
+          <div className="p-3 rounded-2xl bg-emerald-50/60 border border-emerald-100 space-y-2">
+            <label htmlFor="sub-course" className={fieldLabel}>Del pénsum · {open.length} disponible(s)</label>
+            <select id="sub-course" value={courseId ?? ""} onChange={(e) => pick(e.target.value)} className={fieldInput}>
+              <option value="">Otra materia (fuera del pénsum)</option>
+              <optgroup label="Disponibles: tienes los prerrequisitos">
+                {open.map((c) => <option key={c.id} value={c.id}>{c.code} · {c.name}{c.credits != null ? ` · ${c.credits} cr` : ""}{c.term ? ` · periodo ${c.term}` : ""}{c.failed_before ? " · repetir" : ""}</option>)}
+              </optgroup>
+              {locked.length > 0 && (
+                <optgroup label="Bloqueadas: faltan prerrequisitos">
+                  {locked.map((c) => <option key={c.id} value={c.id} disabled>{c.code} · {c.name} — falta {c.missing_prereqs.join(", ")}</option>)}
+                </optgroup>
+              )}
+            </select>
+            {course && course.pending_coreqs.length > 0 && (
+              <p className="text-[11px] text-amber-800">Llévala en el mismo periodo que: {course.pending_coreqs.map((x) => `${x}${byCode(x) ? ` (${byCode(x)!.name})` : ""}`).join(", ")}.</p>
+            )}
+            {course?.failed_before && <p className="text-[11px] text-zinc-600">La reprobaste antes: esta vez cuenta como repetida y las dos notas entran en el índice.</p>}
+          </div>
+        )}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className="sm:col-span-2">
             <label htmlFor="sub-name" className={fieldLabel}>Materia</label>

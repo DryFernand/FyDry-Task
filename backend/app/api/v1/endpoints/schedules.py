@@ -7,9 +7,10 @@ from sqlalchemy.orm import Session
 from app.api.deps import CurrentUser, get_current_user
 from app.api.v1.endpoints.tasks import _owned
 from app.core.database import get_db
-from app.models import ClassAttendance, Program, Schedule, Subject, SubjectSession, TaskItem
+from app.models import ClassAttendance, CurriculumCourse, Program, Schedule, Subject, SubjectSession, TaskItem
 from app.schemas.tasks import (
     AttendanceIn,
+    CoursesIn,
     GradeIn,
     ProgramIn,
     ProgramOut,
@@ -22,6 +23,7 @@ from app.schemas.tasks import (
     SubjectOut,
     TaskOut,
 )
+from app.services import curriculum as cur
 from app.services import grades as gr
 from app.services import schedules as svc
 
@@ -153,7 +155,7 @@ def duplicate_schedule(sid: str, payload: ScheduleDuplicateIn, today: date = Que
     db.flush()
     for subj in db.query(Subject).filter(Subject.schedule_id == src.id).all():
         copy = Subject(schedule_id=new.id, user_id=user.id, name=subj.name, code=subj.code, teacher=subj.teacher, color=subj.color,
-                       credits=subj.credits, modality=subj.modality, location=subj.location, link=subj.link, position=subj.position)
+                       credits=subj.credits, course_id=subj.course_id, modality=subj.modality, location=subj.location, link=subj.link, position=subj.position)
         db.add(copy)
         db.flush()
         for s in db.query(SubjectSession).filter(SubjectSession.subject_id == subj.id).all():
@@ -189,9 +191,19 @@ def _clean(payload: SubjectIn) -> dict:
     return data
 
 
+def _check_course(db: Session, sch: Schedule, course_id) -> None:
+    """La materia del pénsum debe ser de la misma carrera que el horario."""
+    if course_id is None:
+        return
+    c = db.get(CurriculumCourse, course_id)
+    if not c or c.user_id != sch.user_id or c.program_id != sch.program_id:
+        raise HTTPException(status_code=422, detail="Esa materia no está en el pénsum de esta carrera.")
+
+
 @router.post("/schedules/{sid}/subjects", response_model=ScheduleOut, status_code=201)
 def create_subject(sid: str, payload: SubjectIn, today: date = Query(...), user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
     sch = _owned(db, Schedule, sid, user.id)
+    _check_course(db, sch, payload.course_id)
     count = db.query(Subject).filter(Subject.schedule_id == sch.id).count()
     subj = Subject(schedule_id=sch.id, user_id=user.id, position=count, **_clean(payload))
     db.add(subj)
@@ -204,6 +216,7 @@ def create_subject(sid: str, payload: SubjectIn, today: date = Query(...), user:
 @router.put("/subjects/{subject_id}", response_model=ScheduleOut)
 def update_subject(subject_id: str, payload: SubjectIn, today: date = Query(...), user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
     subj = _owned(db, Subject, subject_id, user.id)
+    _check_course(db, db.get(Schedule, subj.schedule_id), payload.course_id)
     for k, v in _clean(payload).items():
         setattr(subj, k, v)
     _sync_sessions(db, subj, user.id, payload.sessions)
@@ -328,9 +341,22 @@ def delete_program(pid: str, user: CurrentUser = Depends(get_current_user), db: 
         raise HTTPException(status_code=409, detail="Necesitas al menos una carrera.")
     if db.query(Schedule).filter(Schedule.program_id == st.id).count():
         raise HTTPException(status_code=409, detail="Mueve o borra primero los horarios de esta carrera.")
+    db.query(CurriculumCourse).filter(CurriculumCourse.program_id == st.id).delete()
     db.delete(st)
     db.commit()
     return Response(status_code=204)
+
+
+@router.get("/programs/{pid}/courses", summary="Pénsum con el estado de cada materia: aprobada, cursando, disponible o bloqueada")
+def list_courses(pid: str, today: date = Query(...), user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    return cur.status(db, gr.get_program(db, user.id, pid), today)
+
+
+@router.put("/programs/{pid}/courses", summary="Guarda el pénsum completo (por código)")
+def save_courses(pid: str, payload: CoursesIn, today: date = Query(...), user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    st = gr.get_program(db, user.id, pid)
+    cur.replace(db, st, payload.courses)
+    return cur.status(db, st, today)
 
 
 @router.get("/grades/analytics", summary="Índice, letras, aprobadas, lo que falta y metas de la carrera")

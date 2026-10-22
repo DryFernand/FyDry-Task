@@ -12,7 +12,7 @@ from typing import Dict, List, Optional
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.models import Program, Schedule, Subject
+from app.models import CurriculumCourse, Program, Schedule, Subject
 from app.services.schedules import PERIOD_MONTHS
 
 
@@ -150,8 +150,12 @@ def compute(db: Session, user_id: str, today: date, program_id: Optional[str] = 
         "subjects": sorted(graded, key=lambda g: -g["grade"]),
         "evolution": evolution,
     }
+    pensum = db.query(CurriculumCourse.credits).filter(CurriculumCourse.program_id == st.id).all()
     timeline = {"today": today, "finished": len(finished), "current": current,
-                "months": PERIOD_MONTHS.get(period_type or "cuatrimestral")}
+                "months": PERIOD_MONTHS.get(period_type or "cuatrimestral"),
+                # Sin totales escritos a mano, salen del pénsum
+                "total_credits": st.total_credits or (sum(c or 0 for (c,) in pensum) or None),
+                "total_subjects": st.total_subjects or (len(pensum) or None)}
     m["plan"] = plan(m, st, cum_pc, in_progress_credits, timeline)
     m["insights"] = insights(m)
     return m
@@ -174,15 +178,16 @@ def plan(m: Dict, st: Program, pc: float, in_progress_credits: int, timeline: Di
     Índice final = (pc + x·R) / (C + R), con pc = puntos-crédito actuales, C = créditos del índice
     y R = créditos que faltan. Despejando: x = (meta·(C + R) − pc) / R.
     """
+    tc, ts = timeline["total_credits"], timeline["total_subjects"]
     scale = sorted(st.scale, key=lambda b: -b["min"])
     top = scale[0]["points"]
     pass_band = letter_for(st.pass_min, scale)
     C = m["credits_attempted"]
     done = m["credits_passed"] if m["credits_passed"] is not None else C  # aprox. si el historial tuvo reprobadas
     transfer = st.transfer_credits or 0
-    remaining = max(st.total_credits - transfer - done, 0) if st.total_credits else None
+    remaining = max(tc - transfer - done, 0) if tc else None
     with_cr = [s for s in m["subjects"] if s["credits"]]
-    avg_cr = (st.total_credits / st.total_subjects if st.total_credits and st.total_subjects
+    avg_cr = (tc / ts if tc and ts
               else sum(s["credits"] for s in with_cr) / len(with_cr) if with_cr else None)
     per_period = [e["credits"] for e in m["evolution"] if e["credits"]]
     rate = sum(per_period) / len(per_period) if per_period else None  # tus créditos por periodo
@@ -204,7 +209,7 @@ def plan(m: Dict, st: Program, pc: float, in_progress_credits: int, timeline: Di
     projected = periods_used + periods_left if periods_left is not None else None
     pace = {
         "plan_periods": st.plan_periods,
-        "pensum_rate": round(st.total_credits / st.plan_periods, 1) if st.total_credits and st.plan_periods else None,
+        "pensum_rate": round(tc / st.plan_periods, 1) if tc and st.plan_periods else None,
         "your_rate": round(rate, 1) if rate else None,
         "limit": limit,
         "projected_total": projected,
@@ -225,7 +230,7 @@ def plan(m: Dict, st: Program, pc: float, in_progress_credits: int, timeline: Di
     elif m["prior"]["index"] is not None:
         mu, sd = m["prior"]["index"], 0.5
 
-    reqs = requirements(m, st, periods_used, periods_left)
+    reqs = requirements(m, st, periods_used, periods_left, tc)
     eligible = not any(r["status"] == "fail" for r in reqs)
     current = m["cumulative_index"]
     targets = [{"name": h["name"], "min": h["min"], "kind": "honor"} for h in sorted(st.honors or [], key=lambda h: -h["min"])]
@@ -262,14 +267,14 @@ def plan(m: Dict, st: Program, pc: float, in_progress_credits: int, timeline: Di
         if t["kind"] == "honor" and not eligible:
             t["status"], t["probability"] = "descalificado", 0
     return {
-        "total_credits": st.total_credits,
-        "total_subjects": st.total_subjects,
+        "total_credits": tc,
+        "total_subjects": ts,
         "transfer_credits": transfer,
         "credits_done": done,
         "credits_in_progress": in_progress_credits,
         "credits_remaining": remaining,
-        "subjects_remaining": max(st.total_subjects - m["passed"], 0) if st.total_subjects else None,
-        "progress": round(min((done + transfer) / st.total_credits, 1), 3) if st.total_credits else None,
+        "subjects_remaining": max(ts - m["passed"], 0) if ts else None,
+        "progress": round(min((done + transfer) / tc, 1), 3) if tc else None,
         "periods_used": periods_used,
         "periods_in_app": timeline["finished"],
         "prior_periods": st.prior_periods or 0,
@@ -341,7 +346,7 @@ def time_goal(st: Program, remaining: Optional[int], in_progress_credits: int, r
     }
 
 
-def requirements(m: Dict, st: Program, periods_used: int, periods_left: Optional[int]) -> List[Dict]:
+def requirements(m: Dict, st: Program, periods_used: int, periods_left: Optional[int], tc: Optional[int]) -> List[Dict]:
     """Requisitos de historial para honores. status: ok | fail | warn | unknown."""
     out = []
     names = [s["name"] for s in m["subjects"] if not s["passed"]]
@@ -374,10 +379,10 @@ def requirements(m: Dict, st: Program, periods_used: int, periods_left: Optional
             "detail": f"Llevas {periods_used} de {st.max_periods} periodos" + (f"; a tu ritmo terminas en {total}." if periods_left is not None else "."),
         })
 
-    if not st.total_credits or st.min_institution_pct is None:
+    if not tc or st.min_institution_pct is None:
         out.append({"key": "residency", "label": "Créditos cursados en la institución", "status": "unknown", "detail": "Indica los créditos del pénsum y el % mínimo."})
     else:
-        pct = round(100 * (st.total_credits - (st.transfer_credits or 0)) / st.total_credits)
+        pct = round(100 * (tc - (st.transfer_credits or 0)) / tc)
         out.append({
             "key": "residency", "label": "Créditos cursados en la institución", "status": "ok" if pct >= st.min_institution_pct else "fail",
             "detail": f"{pct}% del pénsum en la institución (mínimo {st.min_institution_pct}%).",

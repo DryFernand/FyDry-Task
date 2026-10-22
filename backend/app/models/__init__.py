@@ -16,6 +16,7 @@ from app.models.tasks import (
     SubjectSession,
     ClassAttendance,
     Program,
+    CurriculumCourse,
 )
 
 __all__ = [
@@ -36,4 +37,5 @@ __all__ = [
     "SubjectSession",
     "ClassAttendance",
     "Program",
+    "CurriculumCourse",
 ]

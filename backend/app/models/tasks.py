@@ -224,6 +224,7 @@ class Subject(Base, TimestampMixin):
     link = Column(String(500), nullable=True)
     position = Column(Integer, nullable=False, default=0)
     final_grade = Column(Float, nullable=True)  # 0-100; letra, puntos y aprobada salen de la escala
+    course_id = Column(String(36), ForeignKey("curriculum_courses.id", ondelete="SET NULL"), nullable=True, index=True)
 
 
 class SubjectSession(Base, TimestampMixin):
@@ -298,3 +299,21 @@ class Program(Base, TimestampMixin):
     probation_min = Column(Float, nullable=True, default=2.0)  # por debajo = condición de prueba
     max_periods = Column(Integer, nullable=True)
     min_institution_pct = Column(Integer, nullable=True, default=50)
+
+
+class CurriculumCourse(Base, TimestampMixin):
+    """Materia del pénsum de una carrera. Pre y correquisitos van por código."""
+    __tablename__ = "curriculum_courses"
+    __table_args__ = (UniqueConstraint("program_id", "code", name="uq_course_program_code"),)
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    program_id = Column(String(36), ForeignKey("programs.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(String(36), nullable=False, index=True)
+    code = Column(String(30), nullable=False)
+    name = Column(String(150), nullable=False)
+    credits = Column(Integer, nullable=True)
+    term = Column(Integer, nullable=True)  # periodo sugerido en el pénsum (1, 2, 3...)
+    prereqs = Column(JSON, nullable=False, default=list)
+    coreqs = Column(JSON, nullable=False, default=list)
+    done = Column(Boolean, nullable=False, default=False)  # aprobada fuera de la app (antes o convalidada)
+    position = Column(Integer, nullable=False, default=0)

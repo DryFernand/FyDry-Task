@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { AlertTriangle, Archive, ArchiveRestore, Award, Copy, GraduationCap, History, MapPin, MoreHorizontal, Pencil, Plus, Trash2, User } from "lucide-react";
 import { useDash } from "../DashContext";
-import { GradesPanel, ProgramModal } from "../Grades";
+import { GradesPanel } from "../Grades";
+import ProgramModal from "../ProgramModal";
 import { api, formatDay, hoursLabel, PERIOD_META, Program, Schedule, Subject, todayISO, WEEKDAY_LONG, WEEKDAY_SHORT } from "@/lib/tasks";
 
 const HOUR_PX = 52;

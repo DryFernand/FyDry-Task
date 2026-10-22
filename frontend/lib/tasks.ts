@@ -190,6 +190,7 @@ export interface Subject {
   weekly_minutes: number;
   assignments: { total: number; done: number; pending: number; overdue: number; next_date: string | null; next_exam: string | null };
   final_grade: number | null;
+  course_id: string | null;
   letter: string | null;
   passed: boolean | null;
 }
@@ -203,6 +204,7 @@ export interface SubjectInput {
   modality: Modality;
   location?: string | null;
   link?: string | null;
+  course_id?: string | null;
   sessions: SessionInput[];
 }
 
@@ -251,6 +253,30 @@ export interface GradeBand {
   letter: string;
   min: number;
   points: number;
+}
+
+export type CourseStatus = "aprobada" | "cursando" | "disponible" | "bloqueada";
+
+/** Materia del pénsum con su estado según tus horarios. */
+export interface Course {
+  id: string;
+  code: string;
+  name: string;
+  credits: number | null;
+  term: number | null;
+  prereqs: string[];
+  coreqs: string[];
+  done: boolean;
+  status: CourseStatus;
+  missing_prereqs: string[];
+  pending_coreqs: string[];
+  failed_before: boolean;
+  grade: number | null;
+}
+
+export interface Curriculum {
+  courses: Course[];
+  summary: { total: number; aprobada: number; cursando: number; disponible: number; bloqueada: number; credits_total: number; credits_passed: number };
 }
 
 export interface HonorLevel {
@@ -633,6 +659,9 @@ export const api = {
   createProgram: (data: Partial<Program>) => send<Program>("/programs", "POST", data),
   updateProgram: (id: string, data: Partial<Program>) => send<Program>(`/programs/${id}`, "PUT", data),
   deleteProgram: (id: string) => send<null>(`/programs/${id}`, "DELETE"),
+  courses: (programId: string) => send<Curriculum>(`/programs/${programId}/courses${qs({ today: todayISO() })}`),
+  saveCourses: (programId: string, courses: Pick<Course, "code" | "name" | "credits" | "term" | "prereqs" | "coreqs" | "done">[]) =>
+    send<Curriculum>(`/programs/${programId}/courses${qs({ today: todayISO() })}`, "PUT", { courses }),
   gradesAnalytics: (programId?: string | null) => send<GradesAnalytics>(`/grades/analytics${qs({ today: todayISO(), ...(programId ? { program_id: programId } : {}) })}`),
   markAttendance: (sessionId: string, date: string, status: AttendanceStatus | null) => send<unknown>(`/sessions/${sessionId}/attendance`, "PUT", { date, status }),
 
