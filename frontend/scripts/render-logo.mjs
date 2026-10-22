@@ -8,14 +8,19 @@ const pub = path.resolve("public");
 const svg = fs.readFileSync(path.join(pub, "logo_task.svg"));
 const WHITE = { r: 255, g: 255, b: 255, alpha: 1 };
 
-/** Logo centrado sobre fondo (o transparente), con margen proporcional. */
-async function icon(size, file, { bg = null, pad = 0.12 } = {}) {
+/** Logo centrado sobre fondo (o transparente), con margen proporcional. radius = esquinas redondeadas (fracción del lado). */
+async function icon(size, file, { bg = null, pad = 0.12, radius = 0 } = {}) {
   const inner = Math.round(size * (1 - pad * 2));
   const logo = await sharp(svg, { density: 600 }).resize(inner, inner).png().toBuffer();
-  await sharp({ create: { width: size, height: size, channels: 4, background: bg ?? { r: 0, g: 0, b: 0, alpha: 0 } } })
-    .composite([{ input: logo, gravity: "center" }])
-    .png()
-    .toFile(path.join(pub, file));
+  const layers = [{ input: logo, gravity: "center" }];
+  if (radius) {
+    const r = Math.round(size * radius);
+    layers.push({ input: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><rect width="${size}" height="${size}" rx="${r}" ry="${r}"/></svg>`), blend: "dest-in" });
+  }
+  // Se aplana antes del recorte para que la máscara afecte también al fondo
+  const flat = await sharp({ create: { width: size, height: size, channels: 4, background: bg ?? { r: 0, g: 0, b: 0, alpha: 0 } } })
+    .composite(layers.slice(0, 1)).png().toBuffer();
+  await sharp(flat).composite(layers.slice(1)).png().toFile(path.join(pub, file));
   return fs.readFileSync(path.join(pub, file));
 }
 
@@ -24,9 +29,11 @@ await icon(512, "logo_task_fondo_blanco.png", { bg: WHITE });
 await icon(512, "icon.png", { bg: WHITE });
 await icon(192, "icon-192.png", { bg: WHITE });
 await icon(180, "apple-touch-icon.png", { bg: WHITE });
+// Pestaña del navegador: esquinas redondeadas (iPhone y Android ya redondean los suyos)
+await icon(64, "favicon.png", { bg: WHITE, pad: 0.06, radius: 0.22 });
 
 // favicon.ico con PNG embebidos (32 y 16 px)
-const pngs = [await icon(32, "_fav32.png", { bg: WHITE, pad: 0.04 }), await icon(16, "_fav16.png", { bg: WHITE, pad: 0.02 })];
+const pngs = [await icon(32, "_fav32.png", { bg: WHITE, pad: 0.06, radius: 0.22 }), await icon(16, "_fav16.png", { bg: WHITE, pad: 0.04, radius: 0.22 })];
 const header = Buffer.alloc(6 + 16 * pngs.length);
 header.writeUInt16LE(0, 0);
 header.writeUInt16LE(1, 2);

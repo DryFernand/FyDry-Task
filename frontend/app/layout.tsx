@@ -62,24 +62,24 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       {
-        url: "/logo_task_fondo_blanco.png",
+        url: "/favicon.png",
         media: "(prefers-color-scheme: light)",
         type: "image/png",
       },
       {
-        url: "/logo_task_fondo_blanco.png",
+        url: "/favicon.png",
         media: "(prefers-color-scheme: dark)",
         type: "image/png",
       },
     ],
     shortcut: [
       {
-        url: "/logo_task_fondo_blanco.png",
+        url: "/favicon.png",
         media: "(prefers-color-scheme: light)",
         type: "image/png",
       },
       {
-        url: "/logo_task_fondo_blanco.png",
+        url: "/favicon.png",
         media: "(prefers-color-scheme: dark)",
         type: "image/png",
       },
@@ -179,7 +179,7 @@ export default async function RootLayout({
                     // Actualizar Favicon de pestaña
                     var favLink = document.getElementById('dynamic-favicon');
                     if (favLink) {
-                      favLink.href = dark ? '/logo_task_fondo_blanco.png' : '/logo_task_fondo_blanco.png';
+                      favLink.href = '/favicon.png';
                     }
                   }
                   applyTheme(mql.matches);
@@ -199,8 +199,8 @@ export default async function RootLayout({
         <meta name="apple-mobile-web-app-title" content="FyDry Task" />
         <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
         <meta name="theme-color" content="#09090b" media="(prefers-color-scheme: dark)" />
-        <link id="dynamic-favicon" rel="icon" href="/logo_task_fondo_blanco.png" type="image/png" media="(prefers-color-scheme: light)" />
-        <link rel="icon" href="/logo_task_fondo_blanco.png" type="image/png" media="(prefers-color-scheme: dark)" />
+        <link id="dynamic-favicon" rel="icon" href="/favicon.png" type="image/png" media="(prefers-color-scheme: light)" />
+        <link rel="icon" href="/favicon.png" type="image/png" media="(prefers-color-scheme: dark)" />
         <link id="apple-touch-icon" rel="apple-touch-icon" sizes="180x180" href={mobileIcon} />
         <link id="app-manifest" rel="manifest" href={manifestPath} />
         <script
