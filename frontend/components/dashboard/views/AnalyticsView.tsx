@@ -541,7 +541,7 @@ function CareerPlan({ p, max }: { p: GradesPlan; max: number }) {
           {p.subjects_remaining !== null && <><dt className="text-zinc-500">Materias por aprobar</dt><dd className="text-right font-semibold tabular-nums">{p.subjects_remaining}</dd></>}
           {p.credits_in_progress > 0 && <><dt className="text-zinc-500">En curso ahora</dt><dd className="text-right font-semibold tabular-nums">{p.credits_in_progress} cr</dd></>}
           {p.transfer_credits > 0 && <><dt className="text-zinc-500">Convalidados</dt><dd className="text-right font-semibold tabular-nums">{p.transfer_credits} cr</dd></>}
-          <dt className="text-zinc-500">Periodos cursados</dt><dd className="text-right font-semibold tabular-nums">{p.periods_used}{p.max_periods ? ` de ${p.max_periods}` : ""}</dd>
+          <dt className="text-zinc-500">Periodos terminados</dt><dd className="text-right font-semibold tabular-nums">{p.periods_used}{p.max_periods ? ` de ${p.max_periods}` : ""}</dd>
           {p.periods_left !== null && <><dt className="text-zinc-500">Periodos a tu ritmo</dt><dd className="text-right font-semibold tabular-nums">{p.periods_left}</dd></>}
         </dl>
       </Card>

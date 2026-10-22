@@ -61,11 +61,11 @@ def compute(db: Session, user_id: str, today: date, program_id: Optional[str] = 
     )
 
     graded, pending, in_progress, in_progress_credits = [], [], 0, 0
-    started = set()
+    finished = set()  # periodos terminados; el que está en curso cuenta entre los que faltan
     periods: Dict[str, Dict] = {}
     for subj, sch in rows:
-        if sch.start_date <= today:
-            started.add(sch.id)
+        if sch.end_date < today:
+            finished.add(sch.id)
         if subj.final_grade is None:
             if sch.end_date < today:
                 pending.append({"subject_id": subj.id, "name": subj.name, "schedule": sch.name})
@@ -144,7 +144,7 @@ def compute(db: Session, user_id: str, today: date, program_id: Optional[str] = 
         "subjects": sorted(graded, key=lambda g: -g["grade"]),
         "evolution": evolution,
     }
-    m["plan"] = plan(m, st, cum_pc, in_progress_credits, (st.prior_periods or 0) + len(started))
+    m["plan"] = plan(m, st, cum_pc, in_progress_credits, (st.prior_periods or 0) + len(finished))
     m["insights"] = insights(m)
     return m
 

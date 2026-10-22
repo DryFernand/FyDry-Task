@@ -233,7 +233,7 @@ function ProgramForm({ program, onClose }: { program: Program | null; onClose: (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {numField("probation_min", "Índice mínimo (prueba)", "0.01", "Por debajo = condición de prueba")}
             {numField("max_periods", "Permanencia máxima", "1", "En periodos")}
-            {numField("prior_periods", "Periodos antes de la app", "1", "Para contar el tiempo")}
+            {numField("prior_periods", "Periodos sin registrar", "1", "Solo los que no están como horario")}
             {numField("min_institution_pct", "% mínimo en la institución", "1", "Del pénsum, sin convalidar")}
           </div>
         </section>

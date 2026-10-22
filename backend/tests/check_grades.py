@@ -138,6 +138,10 @@ assert t["Magna Cum Laude"]["margins"][0]["credits"] == 16
 assert t["Índice deseado"]["needed"] == 2.71
 probs = [t[k]["probability"] for k in ("Summa Cum Laude", "Magna Cum Laude", "Cum Laude", "Índice deseado")]
 assert probs == sorted(probs) and 10 < probs[0] < 35 and probs[-1] > 90, probs
+cur = ok(c.post(f"{API}/schedules", params=T, json={"name": "2026-3", "start_date": "2026-09-07"}), 201)
+subject(cur["id"], "Redes II", 4)
+assert ok(c.get(f"{API}/grades/analytics", params=T))["plan"]["periods_used"] == 1, "el periodo en curso no cuenta como terminado"
+ok(c.delete(f"{API}/schedules/{cur['id']}"), 204)
 assert any("Te faltan 28 créditos (7 materias)" in s for s in ok(c.get(f"{API}/grades/analytics", params=T))["insights"])
 
 # Una F descalifica los honores, pero el índice deseado se sigue calculando
