@@ -32,6 +32,8 @@ export interface Dash {
   schedules: Schedule[];
   /** Carreras: agrupan horarios; la primera es la principal. */
   programs: Program[];
+  /** false hasta la primera carga de horarios y carreras. */
+  schedulesLoaded: boolean;
   subjectOf: (id: string | null) => Subject | undefined;
   reloadSchedules: () => void;
   refreshKey: number;

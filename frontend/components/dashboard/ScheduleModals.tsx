@@ -6,6 +6,7 @@ import Modal from "./Modal";
 import TaskRow from "./TaskRow";
 import { fieldInput, fieldLabel } from "./TaskFormModal";
 import { useDash } from "./DashContext";
+import { Bone, Loading, RowBones } from "./Skeleton";
 import {
   api, Course, hoursLabel, Modality, PERIOD_META, PeriodType, Schedule, SessionInput, Subject, suggestedEnd, Task, todayISO, WEEKDAY_LONG,
 } from "@/lib/tasks";
@@ -367,10 +368,15 @@ function SubjectDetail({ subject, onClose }: { subject: Subject; onClose: () => 
 
         <section>
           <div className="flex items-center justify-between mb-2">
-            <h3 className="text-xs font-bold text-zinc-900">Asignaciones · {list.length}</h3>
-            <span className="text-[11px] text-zinc-500">{doneRate === null ? "Sin entregas marcadas" : `${Math.round(doneRate * 100)}% cumplido`}</span>
+            <h3 className="text-xs font-bold text-zinc-900">Asignaciones{tasks !== null && ` · ${list.length}`}</h3>
+            {tasks === null ? <Bone className="h-3 w-24" /> : <span className="text-[11px] text-zinc-500">{doneRate === null ? "Sin entregas marcadas" : `${Math.round(doneRate * 100)}% cumplido`}</span>}
           </div>
-          {tasks === null ? <Loader2 className="w-4 h-4 animate-spin text-zinc-400" /> : list.length === 0 ? (
+          {tasks === null ? (
+            <Loading label="Cargando asignaciones…" className="space-y-1.5">
+              <Bone className="h-2.5 w-20" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2"><RowBones count={2} compact /></div>
+            </Loading>
+          ) : list.length === 0 ? (
             <p className="text-xs text-zinc-400">Aún no hay asignaciones. Crea una tarea con categoría académica y elige esta materia.</p>
           ) : (
             <div className="space-y-4">

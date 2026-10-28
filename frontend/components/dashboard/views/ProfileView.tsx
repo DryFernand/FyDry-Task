@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { BrainCircuit, CheckCircle2, Info, Loader2, RefreshCw, Sparkles, Star } from "lucide-react";
 import { useLoad } from "../useLoad";
+import { Bone, Loading } from "../Skeleton";
 import { AiProfile, api, formatDay } from "@/lib/tasks";
 
 const p100 = (r: number | null | undefined) => (r == null ? "—" : `${Math.round(r * 100)}%`);
@@ -46,7 +47,7 @@ export default function ProfileView({ refreshKey, onError }: { refreshKey: numbe
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-zinc-950">¿Qué tipo de persona eres?</h1>
           <p className="text-xs text-zinc-500 mt-0.5">Analiza tus tareas, hábitos y retos de las últimas 4 semanas. Se recomienda actualizarlo cada semana.</p>
         </div>
-        <button type="button" onClick={generate} disabled={generating} className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold cursor-pointer disabled:opacity-60">
+        <button type="button" onClick={generate} disabled={generating || loading} className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold cursor-pointer disabled:opacity-60">
           {generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : p ? <RefreshCw className="w-3.5 h-3.5" /> : <Sparkles className="w-3.5 h-3.5" />}
           {generating ? "Analizando…" : p ? "Actualizar perfil" : "Generar mi perfil"}
         </button>
@@ -59,7 +60,27 @@ export default function ProfileView({ refreshKey, onError }: { refreshKey: numbe
       )}
 
       {loading ? (
-        <div className="py-16 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-zinc-400" /></div>
+        <Loading label="Cargando perfil…" className="space-y-5">
+          <div className="p-6 sm:p-8 rounded-3xl bg-zinc-100 border border-zinc-200/80 space-y-3">
+            <Bone className="h-10 w-10 rounded-2xl" />
+            <Bone className="h-3 w-20" />
+            <Bone className="h-7 w-64 max-w-full" />
+            <div className="space-y-2 pt-1 max-w-3xl">
+              <Bone className="h-3.5" />
+              <Bone className="h-3.5" />
+              <Bone className="h-3.5 w-2/3" />
+            </div>
+            <Bone className="h-2.5 w-56 max-w-full" />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className={`p-5 rounded-3xl bg-white border border-zinc-200/80 space-y-3 ${i === 2 ? "md:col-span-2 xl:col-span-1" : ""}`}>
+                <Bone className="h-3 w-24 mb-1" />
+                {[0, 1, 2].map((j) => <Bone key={j} className={`h-3.5 ${j === 2 ? "w-3/4" : ""}`} />)}
+              </div>
+            ))}
+          </div>
+        </Loading>
       ) : !p ? (
         <div className="rounded-3xl border border-dashed border-zinc-300 bg-white p-10 text-center">
           <BrainCircuit className="w-9 h-9 mx-auto text-emerald-700" aria-hidden="true" />

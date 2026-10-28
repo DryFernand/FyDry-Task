@@ -4,6 +4,7 @@ import { useState } from "react";
 import { AlertTriangle, Archive, ArchiveRestore, Award, Copy, GraduationCap, History, MapPin, MoreHorizontal, Pencil, Plus, Trash2, User } from "lucide-react";
 import { useDash } from "../DashContext";
 import { GradesPanel } from "../Grades";
+import { Bone, Loading } from "../Skeleton";
 import { api, formatDay, hoursLabel, PERIOD_META, Schedule, Subject, todayISO, WEEKDAY_LONG, WEEKDAY_SHORT } from "@/lib/tasks";
 
 const HOUR_PX = 52;
@@ -188,8 +189,93 @@ function SubjectCard({ m }: { m: Subject }) {
   );
 }
 
+// Bloques de ejemplo de la grilla: [día, hora de inicio (desde las 8), duración en horas]
+const GRID_BONES: [number, number, number][] = [[0, 0, 2], [0, 3, 1.5], [1, 1, 2], [2, 0, 2], [2, 4, 1], [3, 1, 2], [4, 2, 1.5]];
+
+/** Forma del horario mientras cargan horarios y carreras. */
+function ScheduleSkeleton() {
+  return (
+    <Loading label="Cargando horario…" className="space-y-5">
+      <div className="flex items-center gap-1.5">
+        <Bone className="h-4 w-4 rounded-full" />
+        <Bone className="h-7 w-36 rounded-xl" />
+        <Bone className="h-7 w-20 rounded-xl" />
+      </div>
+      <section className="p-4 sm:p-5 rounded-3xl bg-white border border-zinc-200/80 flex flex-wrap items-center justify-between gap-4">
+        <div className="space-y-2">
+          <Bone className="h-5 w-48" />
+          <Bone className="h-3 w-64 max-w-full" />
+        </div>
+        <div className="flex items-center gap-4">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="flex flex-col items-center gap-1.5">
+              <Bone className="h-5 w-8" />
+              <Bone className="h-2.5 w-14" />
+            </div>
+          ))}
+          <Bone className="h-9 w-9 rounded-xl" />
+        </div>
+      </section>
+
+      <div className="hidden md:block rounded-3xl border border-zinc-200/80 bg-white p-3">
+        <div className="grid" style={{ gridTemplateColumns: "3rem repeat(5, minmax(0, 1fr))" }}>
+          <div />
+          {WEEKDAY_SHORT.slice(0, 5).map((d) => <div key={d} className="text-center text-xs font-bold pb-2 text-zinc-300">{d}</div>)}
+          <div className="relative" style={{ height: 6 * HOUR_PX }}>
+            {Array.from({ length: 6 }, (_, i) => <Bone key={i} className="absolute right-2 h-2.5 w-7" style={{ top: i * HOUR_PX - 5 }} />)}
+          </div>
+          {[0, 1, 2, 3, 4].map((d) => (
+            <div key={d} className="relative border-l border-zinc-100" style={{ height: 6 * HOUR_PX }}>
+              {Array.from({ length: 6 }, (_, i) => <div key={i} className="absolute inset-x-0 border-t border-zinc-100" style={{ top: i * HOUR_PX }} />)}
+              {GRID_BONES.filter(([day]) => day === d).map(([, h, len]) => (
+                <Bone key={h} className="absolute left-1 right-1 rounded-xl" style={{ top: h * HOUR_PX + 1, height: len * HOUR_PX - 3 }} />
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="md:hidden space-y-3">
+        {[2, 1].map((n, d) => (
+          <section key={d} className="space-y-1.5">
+            <Bone className="h-3 w-20" />
+            {Array.from({ length: n }, (_, i) => (
+              <div key={i} className="flex items-center gap-3 p-3 rounded-2xl bg-white border border-zinc-200/80 border-l-4 border-l-zinc-200">
+                <Bone className="h-3 w-24 shrink-0" />
+                <div className="flex-1 space-y-1.5">
+                  <Bone className="h-3.5 w-3/4" />
+                  <Bone className="h-2.5 w-1/3" />
+                </div>
+              </div>
+            ))}
+          </section>
+        ))}
+      </div>
+
+      <section className="space-y-3">
+        <Bone className="h-4 w-28" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="p-4 rounded-3xl bg-white border border-zinc-200/80 space-y-3">
+              <div className="flex items-start gap-2.5">
+                <Bone className="w-3 h-10 rounded-full shrink-0" />
+                <div className="flex-1 space-y-2">
+                  <Bone className="h-4 w-3/4" />
+                  <Bone className="h-2.5 w-1/2" />
+                </div>
+              </div>
+              <Bone className="h-2.5 w-2/3" />
+              <div className="flex gap-1.5"><Bone className="h-4 w-20 rounded-full" /><Bone className="h-4 w-16 rounded-full" /></div>
+            </div>
+          ))}
+        </div>
+      </section>
+    </Loading>
+  );
+}
+
 export default function ScheduleView() {
-  const { schedules: all, programs, actions } = useDash();
+  const { schedules: all, programs, schedulesLoaded, actions } = useDash();
   const today = todayISO();
   const [programSel, setProgramSel] = useState<string | null>(null);
   const program = programs.find((p) => p.id === programSel) ?? programs[0];
@@ -235,7 +321,9 @@ export default function ScheduleView() {
         </div>
       )}
 
-      {schedules.length === 0 ? (
+      {!schedulesLoaded ? (
+        <ScheduleSkeleton />
+      ) : schedules.length === 0 ? (
         <div className="rounded-3xl border border-dashed border-zinc-300 bg-white p-10 text-center">
           <GraduationCap className="w-9 h-9 mx-auto text-sky-700" aria-hidden="true" />
           <h2 className="mt-3 text-base font-bold text-zinc-900">Crea tu primer horario</h2>

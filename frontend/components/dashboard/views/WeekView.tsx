@@ -5,6 +5,7 @@ import { CalendarDays, ChevronLeft, ChevronRight, Copy, GraduationCap, Inbox, Lo
 import TaskRow from "../TaskRow";
 import { AddMenu, ChallengeRow, ClassRow, HabitRow, ItemKind, KIND_META, KindIcon } from "../ItemRows";
 import { useDash } from "../DashContext";
+import { Bone, Loading, RowBones } from "../Skeleton";
 import { useLoad } from "../useLoad";
 import { byTime } from "./TodayView";
 import { addDays, api, dayScore, formatDay, todayISO, WEEKDAY_SHORT, weekStart } from "@/lib/tasks";
@@ -97,10 +98,10 @@ export default function WeekView() {
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-zinc-950">
             {formatDay(start, { day: "numeric", month: "short" })} – {formatDay(end, { day: "numeric", month: "short" })}
           </h1>
-          <p className="text-xs text-zinc-500 mt-0.5">
+          {week.loading ? <Bone className="mt-1.5 h-3 w-64 max-w-full" /> : <p className="text-xs text-zinc-500 mt-0.5">
             {totals.task} tareas · {totals.habit} hábitos · {totals.challenge} retos{totals.class ? ` · ${totals.class} clases` : ""}
             {weekScore.rate !== null && ` · tareas ${Math.round(weekScore.rate * 100)}% cumplidas`}
-          </p>
+          </p>}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center rounded-2xl border border-zinc-200 bg-white">
@@ -124,7 +125,18 @@ export default function WeekView() {
       </div>
 
       {week.loading ? (
-        <div className="py-16 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-zinc-400" /></div>
+        <Loading label="Cargando semana…" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-3">
+          {days.map((d, i) => (
+            <div key={d} className={`flex flex-col rounded-3xl border p-2.5 min-h-40 ${d === today ? "border-emerald-700/40 bg-white" : "border-zinc-200/80 bg-zinc-50/50"}`}>
+              <div className="flex items-baseline gap-1.5 px-1.5 pb-2">
+                <span className={`text-xs font-bold ${d === today ? "text-emerald-700" : "text-zinc-900"}`}>{WEEKDAY_SHORT[i]}</span>
+                <span className="text-[11px] text-zinc-400">{formatDay(d, { day: "numeric" })}</span>
+              </div>
+              <div className="space-y-1.5 flex-1"><RowBones count={i % 3 === 0 ? 2 : 1} compact /></div>
+              <Bone className="mt-2 h-8 rounded-xl" />
+            </div>
+          ))}
+        </Loading>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-3">
           {days.map((d, i) => {
@@ -165,11 +177,12 @@ export default function WeekView() {
       {show("task") && (
         <section {...dropProps("inbox", null)} className={`rounded-3xl border p-4 transition-colors ${dropTarget === "inbox" ? "border-emerald-500 bg-emerald-50/50" : "border-zinc-200/80 bg-white"}`}>
           <div className="flex items-center justify-between">
-            <h2 className="inline-flex items-center gap-2 text-xs font-bold text-zinc-900"><Inbox className="w-4 h-4 text-zinc-400" /> Tareas sin fecha · {inbox.data?.length ?? 0}</h2>
+            <h2 className="inline-flex items-center gap-2 text-xs font-bold text-zinc-900"><Inbox className="w-4 h-4 text-zinc-400" /> Tareas sin fecha{!inbox.loading && ` · ${inbox.data?.length ?? 0}`}</h2>
             <button type="button" onClick={() => actions.newTask(null)} className="inline-flex items-center gap-1 text-[11px] font-semibold text-zinc-500 hover:text-zinc-900 cursor-pointer"><Plus className="w-3.5 h-3.5" /> Agregar</button>
           </div>
           <p className="text-[11px] text-zinc-400 mt-0.5">Arrastra una tarea a un día para planificarla (en el teléfono, ábrela y elige el día).</p>
-          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2" aria-busy={inbox.loading}>
+            {inbox.loading && <RowBones count={3} compact />}
             {(inbox.data ?? []).map((t) => <TaskRow key={t.id} task={t} category={catOf(t.category_id)} {...taskProps} />)}
           </div>
         </section>

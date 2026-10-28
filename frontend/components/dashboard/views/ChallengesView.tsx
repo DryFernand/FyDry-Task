@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Plus, Trash2, Trophy } from "lucide-react";
+import { Plus, Trash2, Trophy } from "lucide-react";
 import { ChallengeRow } from "../ItemRows";
 import { useDash } from "../DashContext";
 import { useLoad } from "../useLoad";
+import { Bone, Loading, RowBones } from "../Skeleton";
 import { addDays, api, Challenge, CHALLENGE_META, ChallengeStatus, formatDay, todayISO } from "@/lib/tasks";
 
 type Filter = "all" | Exclude<ChallengeStatus, "pending">;
@@ -62,7 +63,29 @@ export default function ChallengesView() {
       </div>
 
       {loading ? (
-        <div className="py-16 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-zinc-400" /></div>
+        <Loading label="Cargando retos…" className="grid grid-cols-1 xl:grid-cols-3 gap-5 items-start">
+          <div className="xl:col-span-2 space-y-6">
+            <section className="space-y-2">
+              <Bone className="h-4 w-24" />
+              <Bone className="h-2.5 w-16" />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2"><RowBones count={2} /></div>
+            </section>
+            <section className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Bone className="h-4 w-44" />
+                <Bone className="h-9 w-72 max-w-full rounded-2xl" />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2"><RowBones count={4} /></div>
+            </section>
+          </div>
+          <div className="p-4 sm:p-5 rounded-3xl bg-white border border-zinc-200/80 space-y-3">
+            <Bone className="h-3 w-32" />
+            <Bone className="h-8 w-16" />
+            <Bone className="h-2.5 w-36" />
+            <Bone className="h-3 rounded-full" />
+            <div className="space-y-2">{[0, 1, 2].map((i) => <Bone key={i} className="h-3" />)}</div>
+          </div>
+        </Loading>
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 items-start">
           <div className="xl:col-span-2 space-y-6">

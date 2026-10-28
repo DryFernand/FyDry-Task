@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Archive, ArchiveRestore, Hammer, Loader2, MoreHorizontal, Pencil, PartyPopper, Plus, Repeat, RotateCcw, Timer, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Hammer, MoreHorizontal, Pencil, PartyPopper, Plus, Repeat, RotateCcw, Timer, Trash2 } from "lucide-react";
 import { useDash } from "../DashContext";
 import { useLoad } from "../useLoad";
+import { Bone, Loading } from "../Skeleton";
 import { addDays, api, formatDay, Habit, todayISO, WEEKDAY_SHORT } from "@/lib/tasks";
 
 const pct = (r: number | null | undefined) => (r == null ? "—" : `${Math.round(r * 100)}%`);
@@ -167,7 +168,25 @@ export default function HabitsView() {
       </div>
 
       {loading ? (
-        <div className="py-16 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-zinc-400" /></div>
+        <Loading label="Cargando hábitos…" className="space-y-6">
+          {[3, 2].map((n, s) => (
+            <section key={s} className="space-y-3">
+              <Bone className="h-4 w-36" />
+              <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
+                {Array.from({ length: n }, (_, i) => (
+                  <div key={i} className="p-4 rounded-3xl bg-white border border-zinc-200/80 space-y-3">
+                    <div className="space-y-2">
+                      <Bone className="h-4 w-2/3" />
+                      <Bone className="h-2.5 w-1/2" />
+                    </div>
+                    {s === 0 ? <Bone className="h-3 rounded-full" /> : null}
+                    <Bone className="h-2.5 w-3/4" />
+                  </div>
+                ))}
+              </div>
+            </section>
+          ))}
+        </Loading>
       ) : all.length === 0 ? (
         <div className="rounded-3xl border border-dashed border-zinc-300 bg-white p-10 text-center">
           <Repeat className="w-9 h-9 mx-auto text-emerald-700" aria-hidden="true" />

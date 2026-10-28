@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { AlertCircle, CheckSquare, ChevronLeft, ChevronRight, Inbox, Loader2, Plus } from "lucide-react";
+import { AlertCircle, CheckSquare, ChevronLeft, ChevronRight, Inbox, Plus } from "lucide-react";
 import TaskRow from "../TaskRow";
 import { useDash } from "../DashContext";
+import { Bone, Loading, RowBones } from "../Skeleton";
 import { useLoad } from "../useLoad";
 import { byTime } from "./TodayView";
 import { addDays, api, dayScore, formatDay, todayISO, weekStart } from "@/lib/tasks";
@@ -33,7 +34,8 @@ export default function TasksView() {
           <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700 uppercase tracking-wider"><CheckSquare className="w-3.5 h-3.5" aria-hidden="true" /> Tareas</div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-zinc-950">Pendientes de la semana</h1>
           <p className="text-xs text-zinc-500 mt-0.5">
-            {formatDay(start, { day: "numeric", month: "short" })} – {formatDay(end, { day: "numeric", month: "short" })} · {tasks.length} tareas
+            {formatDay(start, { day: "numeric", month: "short" })} – {formatDay(end, { day: "numeric", month: "short" })}
+            {!week.loading && ` · ${tasks.length} tareas`}
             {s.rate !== null && ` · ${Math.round(s.rate * 100)}% cumplido`}
           </p>
         </div>
@@ -50,7 +52,20 @@ export default function TasksView() {
       </div>
 
       {week.loading ? (
-        <div className="py-16 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-zinc-400" /></div>
+        <Loading label="Cargando tareas…" className="grid grid-cols-1 xl:grid-cols-3 gap-5 items-start">
+          <div className="xl:col-span-2 space-y-5">
+            {Array.from({ length: 7 }, (_, i) => addDays(start, i)).map((d, i) => (
+              <section key={d} className="space-y-2">
+                <h2 className={`text-xs font-bold ${d === today ? "text-emerald-700" : "text-zinc-900"}`}>{formatDay(d)}{d === today && " · Hoy"}</h2>
+                {i % 2 === 0 ? <div className="grid grid-cols-1 md:grid-cols-2 gap-2"><RowBones count={2} /></div> : <Bone className="h-3 w-20" />}
+              </section>
+            ))}
+          </div>
+          <div className="p-4 rounded-3xl bg-white border border-zinc-200/80 space-y-2">
+            <Bone className="h-3.5 w-28 mb-3" />
+            <RowBones count={2} compact />
+          </div>
+        </Loading>
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 items-start">
           <div className="xl:col-span-2 space-y-5">
@@ -77,10 +92,11 @@ export default function TasksView() {
             )}
             <section className="p-4 rounded-3xl bg-white border border-zinc-200/80 space-y-2">
               <div className="flex items-center justify-between">
-                <h2 className="flex items-center gap-1.5 text-xs font-bold text-zinc-900"><Inbox className="w-4 h-4 text-zinc-400" /> Sin fecha · {inbox.data?.length ?? 0}</h2>
+                <h2 className="flex items-center gap-1.5 text-xs font-bold text-zinc-900"><Inbox className="w-4 h-4 text-zinc-400" /> Sin fecha{!inbox.loading && ` · ${inbox.data?.length ?? 0}`}</h2>
                 <button type="button" onClick={() => actions.newTask(null)} className="text-[11px] font-semibold text-zinc-400 hover:text-zinc-900 cursor-pointer">+ Agregar</button>
               </div>
-              {(inbox.data ?? []).length === 0 && <p className="text-xs text-zinc-400">Nada en la bandeja.</p>}
+              {inbox.loading && <Loading label="Cargando bandeja…" className="space-y-2"><RowBones count={2} compact /></Loading>}
+              {!inbox.loading && (inbox.data ?? []).length === 0 && <p className="text-xs text-zinc-400">Nada en la bandeja.</p>}
               {(inbox.data ?? []).map((t) => <TaskRow key={t.id} task={t} category={catOf(t.category_id)} compact {...rowProps} />)}
             </section>
           </aside>

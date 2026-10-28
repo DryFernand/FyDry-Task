@@ -130,6 +130,7 @@ export default function DashboardLayout() {
   const [resultTarget, setResultTarget] = useState<Challenge | null>(null);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
+  const [schedulesLoaded, setSchedulesLoaded] = useState(false);
   // undefined = cerrado, null = carrera nueva
   const [programEdit, setProgramEdit] = useState<Program | null | undefined>(undefined);
   const [scheduleTarget, setScheduleTarget] = useState<ScheduleFormTarget | null>(null);
@@ -151,8 +152,10 @@ export default function DashboardLayout() {
   }, [onError]);
   const closeSettings = useCallback(() => setIsSettingsOpen(false), []);
   const loadSchedules = useCallback(() => {
-    api.schedules().then(setSchedules).catch((e) => onError(e.message));
-    api.programs().then(setPrograms).catch((e) => onError(e.message));
+    Promise.all([
+      api.schedules().then(setSchedules).catch((e) => onError(e.message)),
+      api.programs().then(setPrograms).catch((e) => onError(e.message)),
+    ]).finally(() => setSchedulesLoaded(true));
   }, [onError]);
   const reloadSchedules = useCallback(() => {
     loadSchedules();
@@ -245,6 +248,7 @@ export default function DashboardLayout() {
       catOf: (id) => categories.find((c) => c.id === id),
       schedules,
       programs,
+      schedulesLoaded,
       subjectOf: (id) => (id ? schedules.flatMap((s) => s.subjects).find((m) => m.id === id) : undefined),
       reloadSchedules,
       refreshKey,
@@ -271,7 +275,7 @@ export default function DashboardLayout() {
         openSubject: (subject) => setSubjectDetail(subject),
       },
     }),
-    [categories, schedules, programs, reloadSchedules, refreshKey, bump, onError, onInfo]
+    [categories, schedules, programs, schedulesLoaded, reloadSchedules, refreshKey, bump, onError, onInfo]
   );
 
   if (isLoadingAuth) {

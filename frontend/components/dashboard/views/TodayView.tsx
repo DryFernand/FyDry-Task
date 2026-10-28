@@ -5,6 +5,7 @@ import { AlertCircle, CalendarPlus, GraduationCap, Inbox, Loader2, Moon, Plus, R
 import TaskRow from "../TaskRow";
 import { ChallengeRow, ClassRow, HabitRow, KindIcon } from "../ItemRows";
 import { useDash } from "../DashContext";
+import { Bone, Loading, RowBones } from "../Skeleton";
 import { useLoad } from "../useLoad";
 import { addDays, Agenda, api, dayScore, formatDay, STATUS_META, Task, todayISO } from "@/lib/tasks";
 
@@ -39,10 +40,53 @@ function Meter({ label, value, sub }: { label: string; value: string; sub: strin
   );
 }
 
-function SectionTitle({ icon, title, count, action }: { icon: React.ReactNode; title: string; count: number; action?: React.ReactNode }) {
+/** Forma de la tarjeta "Tareas de hoy" mientras carga. */
+function ScoreBone() {
+  return (
+    <Loading label="Cargando resumen del día…" className="p-4 sm:p-5 rounded-3xl bg-white border border-zinc-200/80">
+      <div className="flex items-end justify-between gap-3">
+        <div className="space-y-2">
+          <Bone className="h-3 w-20" />
+          <Bone className="h-8 w-16" />
+        </div>
+        <Bone className="h-3 w-24" />
+      </div>
+      <Bone className="mt-3 h-2.5 w-full rounded-full" />
+      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+        {ORDER.map((s) => <Bone key={s} className="h-3 w-14" />)}
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        {[0, 1].map((i) => (
+          <div key={i} className="p-3 rounded-2xl bg-zinc-50 border border-zinc-200/60 space-y-1.5">
+            <Bone className="h-2.5 w-12" />
+            <Bone className="h-5 w-10" />
+            <Bone className="h-2.5 w-16" />
+          </div>
+        ))}
+      </div>
+    </Loading>
+  );
+}
+
+/** Filas de la bandeja "Sin fecha" mientras carga. */
+function InboxBones() {
+  return (
+    <>
+      {[0, 1].map((i) => (
+        <div key={i} className="flex items-center gap-2 p-2.5 rounded-2xl border border-zinc-200/80">
+          <Bone className="w-2 h-2 rounded-full shrink-0" />
+          <Bone className="h-3.5 flex-1" />
+          <Bone className="h-6 w-11 rounded-lg" />
+        </div>
+      ))}
+    </>
+  );
+}
+
+function SectionTitle({ icon, title, count, action }: { icon: React.ReactNode; title: string; count: number | null; action?: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <h2 className="flex items-center gap-1.5 text-sm font-bold text-zinc-900">{icon} {title} <span className="text-zinc-400 font-semibold">· {count}</span></h2>
+      <h2 className="flex items-center gap-1.5 text-sm font-bold text-zinc-900">{icon} {title} {count !== null && <span className="text-zinc-400 font-semibold">· {count}</span>}</h2>
       {action}
     </div>
   );
@@ -143,7 +187,7 @@ export default function TodayView() {
 
           {/* ===== Tareas ===== */}
           <section className="space-y-3">
-            <SectionTitle icon={<KindIcon kind="task" />} title="Tareas" count={tasks.length} />
+            <SectionTitle icon={<KindIcon kind="task" />} title="Tareas" count={day.loading ? null : tasks.length} />
             <form onSubmit={addQuick} className="flex gap-2">
               <label htmlFor="quick-add" className="sr-only">Nueva tarea para hoy</label>
               <input id="quick-add" value={quick} onChange={(e) => setQuick(e.target.value)} maxLength={200} placeholder="Agregar tarea para hoy y pulsa Enter"
@@ -156,7 +200,7 @@ export default function TodayView() {
               </button>
             </form>
             {day.loading ? (
-              <div className="py-8 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-zinc-400" /></div>
+              <Loading label="Cargando tareas…" className="space-y-2"><RowBones count={3} /></Loading>
             ) : tasks.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-zinc-300 bg-white p-6 text-center">
                 <CalendarPlus className="w-7 h-7 mx-auto text-emerald-700" aria-hidden="true" />
@@ -176,10 +220,12 @@ export default function TodayView() {
             <SectionTitle
               icon={<KindIcon kind="habit" />}
               title="Hábitos de hoy"
-              count={entries.length}
+              count={day.loading ? null : entries.length}
               action={<button type="button" onClick={() => actions.newHabit("building", today)} className="text-[11px] font-semibold text-emerald-700 hover:text-emerald-900 cursor-pointer">+ Hábito</button>}
             />
-            {!day.loading && entries.length === 0 ? (
+            {day.loading ? (
+              <Loading label="Cargando hábitos…" className="grid grid-cols-1 xl:grid-cols-2 gap-2"><RowBones count={2} /></Loading>
+            ) : entries.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-zinc-300 bg-white p-5 text-center text-sm text-zinc-500">
                 <Repeat className="w-6 h-6 mx-auto text-emerald-700 mb-1.5" aria-hidden="true" />
                 Hoy no te toca ningún hábito.
@@ -198,10 +244,12 @@ export default function TodayView() {
             <SectionTitle
               icon={<KindIcon kind="challenge" />}
               title="Retos de hoy"
-              count={challenges.length}
+              count={day.loading ? null : challenges.length}
               action={<button type="button" onClick={() => actions.newChallenge(today)} className="text-[11px] font-semibold text-amber-700 hover:text-amber-900 cursor-pointer">+ Reto</button>}
             />
-            {!day.loading && challenges.length === 0 ? (
+            {day.loading ? (
+              <Loading label="Cargando retos…" className="grid grid-cols-1 xl:grid-cols-2 gap-2"><RowBones count={2} /></Loading>
+            ) : challenges.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-zinc-300 bg-white p-5 text-center text-sm text-zinc-500">
                 <Trophy className="w-6 h-6 mx-auto text-amber-600 mb-1.5" aria-hidden="true" />
                 ¿Te pones un reto hoy? Ej. &quot;Caminar 10k en 30 minutos&quot;.
@@ -215,6 +263,7 @@ export default function TodayView() {
         </div>
 
         <aside className="space-y-5 order-1 lg:order-2 lg:sticky lg:top-6">
+          {day.loading ? <ScoreBone /> : (
           <div className="p-4 sm:p-5 rounded-3xl bg-white border border-zinc-200/80">
             <div className="flex items-end justify-between gap-3">
               <div>
@@ -247,14 +296,16 @@ export default function TodayView() {
               {classes.length > 0 && <Meter label="Clases" value={`${classes.filter((c) => c.attendance === "attended").length}/${classes.length}`} sub="asistidas" />}
             </div>
           </div>
+          )}
 
           <section className="rounded-3xl border border-zinc-200/80 bg-white">
             <button type="button" onClick={() => setShowInbox(!showInbox)} aria-expanded={showInbox} className="w-full flex items-center justify-between p-4 text-xs font-semibold text-zinc-700 cursor-pointer lg:cursor-default">
-              <span className="inline-flex items-center gap-2"><Inbox className="w-4 h-4 text-zinc-400" /> Sin fecha · {inbox.data?.length ?? 0}</span>
+              <span className="inline-flex items-center gap-2"><Inbox className="w-4 h-4 text-zinc-400" /> Sin fecha{!inbox.loading && ` · ${inbox.data?.length ?? 0}`}</span>
               <span className="text-zinc-400 lg:hidden">{showInbox ? "Ocultar" : "Ver"}</span>
             </button>
             <div className={`px-4 pb-4 space-y-2 ${showInbox ? "" : "hidden lg:block"}`}>
-              {(inbox.data ?? []).length === 0 && <p className="text-xs text-zinc-400">Nada en la bandeja.</p>}
+              {inbox.loading && <Loading label="Cargando bandeja…" className="space-y-2"><InboxBones /></Loading>}
+              {!inbox.loading && (inbox.data ?? []).length === 0 && <p className="text-xs text-zinc-400">Nada en la bandeja.</p>}
               {(inbox.data ?? []).map((t) => (
                 <div key={t.id} className="flex items-center gap-2 p-2.5 rounded-2xl border border-zinc-200/80">
                   <span className="w-2 h-2 rounded-full shrink-0" style={{ background: catOf(t.category_id)?.color ?? "#d4d4d8" }} aria-hidden="true" />

@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { Award, BookOpen, ClipboardPaste, GraduationCap, History, Landmark, Loader2, Plus, Target, Trash2, X } from "lucide-react";
 import { fieldInput, fieldLabel } from "./TaskFormModal";
 import { useDash } from "./DashContext";
+import { Bone, Loading } from "./Skeleton";
 import { api, Course, CourseStatus, GradeBand, Grading, HonorLevel, PERIOD_META, Program, PROGRAM_PERIODS, todayISO } from "@/lib/tasks";
 
 const num = (v: string) => (v.trim() === "" ? null : Number(v));
@@ -279,7 +280,34 @@ function ProgramForm({ program, onClose }: { program: Program | null; onClose: (
             )}
 
             {tab === "pensum" && (
-              rows === null ? <div className="py-10 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-zinc-400" /></div> : (
+              rows === null ? (
+                <Loading label="Cargando pénsum…" className="space-y-4">
+                  <div className="space-y-1.5"><Bone className="h-3" /><Bone className="h-3 w-2/3" /></div>
+                  <div className="flex items-center gap-2">
+                    <Bone className="h-7 w-24 rounded-xl" />
+                    <Bone className="h-7 w-36 rounded-xl" />
+                    <Bone className="ml-auto h-3 w-32" />
+                  </div>
+                  <ul className="space-y-2">
+                    {[0, 1, 2, 3].map((i) => (
+                      <li key={i} className="p-2.5 rounded-2xl border border-zinc-200/80 space-y-2">
+                        <div className="grid grid-cols-[5.5rem_1fr_3.5rem_3.5rem_auto] gap-2 items-center">
+                          <Bone className="h-9 rounded-xl" />
+                          <Bone className="h-9 rounded-xl" />
+                          <Bone className="h-9 rounded-xl" />
+                          <Bone className="h-9 rounded-xl" />
+                          <Bone className="h-8 w-8 rounded-xl" />
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2 items-center">
+                          <Bone className="h-9 rounded-xl" />
+                          <Bone className="h-9 rounded-xl" />
+                          <Bone className="h-3 w-24 justify-self-end" />
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </Loading>
+              ) : (
                 <>
                   {hint("Todas las materias de la carrera con su código. Prerrequisitos y correquisitos van por código, separados por coma. Al agregar una materia a un horario podrás elegir las que tienes disponibles.")}
                   <div className="flex flex-wrap items-center gap-2">

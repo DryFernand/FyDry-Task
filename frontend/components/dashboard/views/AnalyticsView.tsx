@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowLeft, Award, BarChart3, ChevronRight, Flag, Flame, GraduationCap, Lightbulb, ListChecks, Loader2, Repeat, Repeat2, ShieldCheck, Target, Trophy } from "lucide-react";
+import { ArrowLeft, Award, BarChart3, ChevronRight, Flag, Flame, GraduationCap, Lightbulb, ListChecks, Repeat, Repeat2, ShieldCheck, Target, Trophy } from "lucide-react";
 import { useDash } from "../DashContext";
 import { statusBadge } from "../Grades";
 import { useLoad } from "../useLoad";
+import { Bone, CardBone, Loading, StatBone } from "../Skeleton";
 import { addDays, Analytics, api, AverageAnalytics, CHALLENGE_META, ChallengeAnalytics, ClassAnalytics, formatDay, GradesAnalytics, GradesPlan, HabitAnalytics, PlanTarget, STATUS_META, TargetStatus, todayISO, weekStart } from "@/lib/tasks";
 
 const BRAND = "#6e2234";
@@ -75,7 +76,7 @@ const SECTIONS: { key: Section; title: string; desc: string; icon: typeof BarCha
 ];
 
 /** Pantalla previa: eliges qué análisis ver. */
-function Picker({ all, grades, hasClasses, onPick }: { all: Analytics; grades: GradesAnalytics | AverageAnalytics | null; hasClasses: boolean; onPick: (s: Section) => void }) {
+function Picker({ all, grades, hasClasses, onPick }: { all: Analytics; /** undefined = cargando */ grades: GradesAnalytics | AverageAnalytics | null | undefined; hasClasses: boolean; onPick: (s: Section) => void }) {
   const headline: Record<Section, [string, string]> = {
     general: [String(all.overview.active_days), "días activos"],
     tasks: [pct(all.overview.tasks_rate), `${all.tasks.evaluated} tareas marcadas`],
@@ -96,13 +97,54 @@ function Picker({ all, grades, hasClasses, onPick }: { all: Analytics; grades: G
           </div>
           <h2 className="mt-3 text-base font-bold text-zinc-950">{x.title}</h2>
           <p className="text-xs text-zinc-500">{x.desc}</p>
-          <div className="mt-3 flex items-baseline gap-1.5">
-            <span className="text-2xl font-bold tabular-nums text-zinc-950">{headline[x.key][0]}</span>
-            <span className="text-[11px] text-zinc-500">{headline[x.key][1]}</span>
-          </div>
+          {x.key === "grades" && grades === undefined ? (
+            <div className="mt-3 flex items-baseline gap-1.5" aria-busy="true">
+              <Bone className="h-6 w-12 self-center" />
+              <Bone className="h-2.5 w-24" />
+            </div>
+          ) : (
+            <div className="mt-3 flex items-baseline gap-1.5">
+              <span className="text-2xl font-bold tabular-nums text-zinc-950">{headline[x.key][0]}</span>
+              <span className="text-[11px] text-zinc-500">{headline[x.key][1]}</span>
+            </div>
+          )}
         </button>
       ))}
     </div>
+  );
+}
+
+/** Forma de la pantalla previa o de una sección mientras cargan sus datos. */
+function AnalyticsSkeleton({ section }: { section: Section | null }) {
+  if (section === null)
+    return (
+      <Loading label="Cargando análisis…" className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+        {SECTIONS.map((x) => (
+          <div key={x.key} className="p-5 rounded-3xl bg-white border border-zinc-200/80">
+            <Bone className="w-10 h-10 rounded-2xl" />
+            <Bone className="mt-3 h-4 w-32" />
+            <Bone className="mt-2 h-2.5 w-48 max-w-full" />
+            <div className="mt-4 flex items-end gap-1.5">
+              <Bone className="h-6 w-12" />
+              <Bone className="h-2.5 w-24" />
+            </div>
+          </div>
+        ))}
+      </Loading>
+    );
+  const stats = section === "general" ? 3 : 4;
+  return (
+    <Loading label="Cargando análisis…" className="space-y-5">
+      <div className={`grid gap-3 ${stats === 3 ? "grid-cols-1 sm:grid-cols-3" : "grid-cols-2 lg:grid-cols-4"}`}>
+        {Array.from({ length: stats }, (_, i) => <StatBone key={i} />)}
+      </div>
+      <CardBone lines={3} />
+      {section !== "general" && (
+        <div className={`grid grid-cols-1 lg:grid-cols-2 ${section === "tasks" ? "2xl:grid-cols-3" : ""} gap-4`}>
+          {[0, 1].map((i) => <CardBone key={i} lines={5} bars />)}
+        </div>
+      )}
+    </Loading>
   );
 }
 
@@ -159,11 +201,13 @@ export default function AnalyticsView({ refreshKey, onError }: { refreshKey: num
         </div>
       </div>
 
-      {loading || !all || !m ? (
-        <div className="py-16 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-zinc-400" /></div>
+      {section === "grades" ? (
+        grades.loading || !grades.data ? <AnalyticsSkeleton section="grades" /> : grades.data.mode === "average" ? <AverageSection g={grades.data} /> : <GradesSection g={grades.data} />
+      ) : loading || !all || !m ? (
+        <AnalyticsSkeleton section={section} />
       ) : (
         <>
-          {section === null && <Picker all={all} grades={grades.data} hasClasses={hasClasses} onPick={setSection} />}
+          {section === null && <Picker all={all} grades={grades.loading ? undefined : grades.data} hasClasses={hasClasses} onPick={setSection} />}
           {section === "general" && (
           <>
           {/* Resumen general de las secciones */}
@@ -189,7 +233,6 @@ export default function AnalyticsView({ refreshKey, onError }: { refreshKey: num
           {section === "habits" && <HabitsSection h={all.habits} />}
           {section === "challenges" && <ChallengesSection c={all.challenges} />}
           {section === "classes" && <ClassesSection k={all.classes} />}
-          {section === "grades" && (grades.data ? (grades.data.mode === "average" ? <AverageSection g={grades.data} /> : <GradesSection g={grades.data} />) : <div className="py-16 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-zinc-400" /></div>)}
           {section === "tasks" && (
           <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

@@ -5,6 +5,7 @@ import { Check, CircleDashed, X, ArrowRight, GraduationCap, Loader2, Moon } from
 import Modal from "./Modal";
 import { KindIcon } from "./ItemRows";
 import { ResultChoices } from "./ChallengeModals";
+import { Bone, Loading } from "./Skeleton";
 import { addDays, api, AttendanceStatus, Category, Challenge, ChallengeStatus, ClassOccurrence, formatDay, Habit, HabitLogStatus, STATUS_META, Task } from "@/lib/tasks";
 
 type Choice = "done" | "partial" | "not_done" | "postponed";
@@ -127,7 +128,27 @@ function DayClose({ date, categories, onClose, onSaved }: Props & { date: string
       }
     >
       {loading ? (
-        <div className="py-10 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-zinc-400" /></div>
+        <Loading label="Cargando el día…" className="space-y-5">
+          <section className="space-y-2">
+            <Bone className="h-3.5 w-64 max-w-full" />
+            <Bone className="h-2.5 w-48" />
+            <div className="pt-1 space-y-2">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="p-3 rounded-2xl border border-zinc-200 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Bone className="w-3.5 h-3.5 rounded-full shrink-0" />
+                    <Bone className="h-3.5 w-1/2" />
+                  </div>
+                  <div className="grid grid-cols-4 gap-1.5">{[0, 1, 2, 3].map((j) => <Bone key={j} className="h-8 rounded-xl" />)}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+          <section className="space-y-2">
+            <Bone className="h-3.5 w-48" />
+            <div className="flex gap-2">{[0, 1, 2, 3, 4].map((i) => <Bone key={i} className="flex-1 h-14 rounded-xl" />)}</div>
+          </section>
+        </Loading>
       ) : (
         <div className="space-y-5">
           <section>
